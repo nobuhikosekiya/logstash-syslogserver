@@ -1,0 +1,9 @@
+cloud.id: 815-test:dXMtY2VudHJhbDEuZ2NwLmNsb3VkLmVzLmlvJGQ4MDRkN2JlZjRkOTQyM2NiYTdjNzFkNzMwMDcwMjhiJGYyMDlkYmE1Y2ZmNzRhNDZiOTViNzVlZWNmZGU1OGQ0
+config.reload.automatic: true
+config.reload.interval: 30s
+http.host: 0.0.0.0
+log.level: info
+path.config: /usr/share/logstash/pipeline
+pipeline.batch.delay: 50
+pipeline.batch.size: 125
+pipeline.workers: 2

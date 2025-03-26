@@ -1,0 +1,57 @@
+version: '3.8'
+
+services:
+  logstash:
+    image: docker.elastic.co/logstash/logstash:8.12.1
+    container_name: logstash
+    volumes:
+      - ./logstash.yml:/usr/share/logstash/config/logstash.yml
+      - ./logstash/pipeline:/usr/share/logstash/pipeline:ro
+      - ./logstash/secrets:/usr/share/logstash/secrets:ro
+    environment:
+      - ES_ENDPOINT=${ES_ENDPOINT}
+      - ES_PORT=${ES_PORT}
+      - ELASTIC_LOGSTASH_API_KEY=${ELASTIC_LOGSTASH_API_KEY}
+      - ES_DATA_STREAM_NAMESPACE=${ES_DATA_STREAM_NAMESPACE}
+      - LS_JAVA_OPTS=-Xmx256m -Xms256m
+    ports:
+      - "5514:5514"
+      - "5514:5514/udp"
+      - "9600:9600"
+    networks:
+      - elastic
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9600/_node/stats"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  log-sender:
+    build:
+      context: ./log-sender
+      args:
+        - LOG_TYPE=${LOG_TYPE:-all}
+    container_name: log-sender
+    volumes:
+      - ./logs:/logs
+    environment:
+      - LOGSTASH_HOST=logstash
+      - LOGSTASH_PORT=5514
+      - DOWNLOAD_LOGS=${DOWNLOAD_LOGS:-true}
+      - LOG_SEND_INTERVAL=${LOG_SEND_INTERVAL:-0.01}
+      - PROTOCOL=${PROTOCOL:-tcp}
+      - LOOP_LOGS=${LOOP_LOGS:-false}
+      - KEEP_RUNNING=${KEEP_RUNNING:-false}
+      - LOG_TYPE=${LOG_TYPE:-all}
+    command: ["/app/entrypoint.sh"]
+    networks:
+      - elastic
+    depends_on:
+      logstash:
+        condition: service_healthy
+    restart: on-failure
+
+networks:
+  elastic:
+    driver: bridge
