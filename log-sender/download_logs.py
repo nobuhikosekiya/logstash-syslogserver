@@ -10,7 +10,7 @@ import shutil
 
 # URLs for the log files
 LOG_FILES = {
-    "windows": "https://zenodo.org/records/8196385/files/Windows.tar.gz?download=1",
+    # "windows": "https://zenodo.org/records/8196385/files/Windows.tar.gz?download=1",
     "linux": "https://zenodo.org/records/8196385/files/Linux.tar.gz?download=1",
     "mac": "https://zenodo.org/records/8196385/files/Mac.tar.gz?download=1",
     "ssh": "https://zenodo.org/records/8196385/files/SSH.tar.gz?download=1",

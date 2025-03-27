@@ -22,6 +22,55 @@ def colored_print(text, color):
     """Print colored text to the terminal"""
     print(f"{color}{text}{Colors.NC}")
 
+def update_env_file_with_options(namespace, log_type, drop_event_original=False):
+    """Update the .env file with the namespace, log type, and drop_event_original setting"""
+    if not os.path.exists(".env"):
+        print(".env file not found")
+        return False
+    
+    # Read the current .env file
+    with open(".env", "r") as file:
+        lines = file.readlines()
+    
+    # Filter out existing settings
+    filtered_lines = [line for line in lines if not line.startswith("ES_DATA_STREAM_NAMESPACE=") 
+                      and not line.startswith("LOG_TYPE=")
+                      and not line.startswith("DROP_EVENT_ORIGINAL=")]
+    
+    # Add the new values
+    filtered_lines.append(f"ES_DATA_STREAM_NAMESPACE={namespace}\n")
+    filtered_lines.append(f"LOG_TYPE={log_type}\n")
+    filtered_lines.append(f"DROP_EVENT_ORIGINAL={'true' if drop_event_original else 'false'}\n")
+    
+    # Write back to the .env file
+    with open(".env", "w") as file:
+        file.writelines(filtered_lines)
+    
+    print(f"Updated .env file with:")
+    print(f"  namespace: {namespace}")
+    print(f"  log_type: {log_type}")
+    print(f"  drop_event_original: {'true' if drop_event_original else 'false'}")
+    
+    # Verify the changes
+    with open(".env", "r") as file:
+        content = file.read()
+        ns_pattern = re.compile(r"ES_DATA_STREAM_NAMESPACE\s*=\s*{0}".format(namespace))
+        log_pattern = re.compile(r"LOG_TYPE\s*=\s*{0}".format(log_type))
+        
+        # This is the fixed part: properly create a regex for the boolean value
+        expected_value = "true" if drop_event_original else "false"
+        drop_original_pattern = re.compile(r"DROP_EVENT_ORIGINAL\s*=\s*" + re.escape(expected_value))
+
+        
+        if not ns_pattern.search(content):
+            print("WARNING: ES_DATA_STREAM_NAMESPACE not correctly set in .env")
+        if not log_pattern.search(content):
+            print("WARNING: LOG_TYPE not correctly set in .env")
+        if not drop_original_pattern.search(content):
+            print("WARNING: DROP_EVENT_ORIGINAL not correctly set in .env")
+    
+    return True
+
 def run_command(command, shell=False, env=None, capture_output=False):
     """Run a command and return its output"""
     try:
@@ -154,7 +203,7 @@ def check_elasticsearch_settings(env_file=".env"):
     
     return True
 
-def create_test_report(data_stream, use_logsdb, log_type, final_count, test_result="UNKNOWN"):
+def create_test_report(data_stream, use_logsdb, log_type, final_count, drop_event_original=False, test_result="UNKNOWN"):
     """Generate a test report markdown file"""
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
@@ -177,7 +226,12 @@ Test conducted on: {now}
 - Data stream: {data_stream}
 - LogsDB mode: {use_logsdb}
 - Log type: {log_type}
+- Drop event.original: {drop_event_original}
 - Log lines ingested: {final_count}
+
+## Storage Optimizations
+- LogsDB mode: {'Enabled' if use_logsdb else 'Disabled'}
+- event.original field: {'Dropped' if drop_event_original else 'Kept as keyword type'}
 
 ## Environment
 - Docker version: {docker_version}
@@ -209,10 +263,12 @@ Test conducted on: {now}
 
 def main():
     parser = argparse.ArgumentParser(description='Test Logstash Syslog Server to Elasticsearch setup')
-    parser.add_argument('--log-type', choices=['windows', 'linux', 'mac', 'ssh', 'apache' 'all'], default='all',
+    parser.add_argument('--log-type', choices=['windows', 'linux', 'mac', 'ssh', 'apache', 'all'], default='all',
                         help='Log type to process (windows, linux, mac, ssh, apache or all)')
     parser.add_argument('--logsdb', action='store_true', 
                         help='Enable LogsDB mode for Elasticsearch indices')
+    parser.add_argument('--drop-event-original', action='store_true',
+                        help='Drop the event.original field to reduce storage size')
     parser.add_argument('--no-cleanup', action='store_true',
                         help='Do not restore .env file or stop containers after test')
     parser.add_argument('--debug', action='store_true',
@@ -223,10 +279,12 @@ def main():
     # Set default values
     use_logsdb = args.logsdb
     log_type = args.log_type
+    drop_event_original = args.drop_event_original
     
     colored_print("Starting test of Logstash Syslog Server to Elasticsearch setup...", Colors.YELLOW)
     print(f"Using log type: {log_type}")
     print(f"LogsDB mode: {use_logsdb}")
+    print(f"Drop event.original: {drop_event_original}")
     
     # Register cleanup handler for Ctrl+C
     def cleanup_handler(sig, frame):
@@ -275,10 +333,15 @@ def main():
     
     # Append log type to namespace
     namespace = f"{base_namespace}-{log_type}"
+
+    # Append no-original to namespace if dropping event.original
+    if drop_event_original:
+        namespace = f"{namespace}-no-original"
+
     colored_print(f"Using namespace: {namespace}", Colors.GREEN)
     
-    # Update .env file with namespace and log type
-    update_env_file(namespace, log_type)
+    # Update .env file with namespace, log type, and drop_event_original setting
+    update_env_file_with_options(namespace, log_type, drop_event_original)
     
     # Load environment variables from .env file
     print("Loading environment variables from .env file...")
@@ -337,22 +400,23 @@ def main():
     # Run the data stream setup script
     print(f"Setting up Elasticsearch data stream with namespace {namespace}...")
     logsdb_arg = "--logsdb" if use_logsdb else ""
-    
+    drop_original_arg = "--drop-event-original" if drop_event_original else ""
+
     # Debug environment variables
     if args.debug:
         print("\nDebug: Environment Variables for Data Stream Setup:")
         for key, value in os.environ.items():
-            if key.startswith('ES_') or key == 'ELASTIC_ADMIN_API_KEY':
+            if key.startswith('ES_') or key == 'ELASTIC_ADMIN_API_KEY' or key == 'DROP_EVENT_ORIGINAL':
                 if 'KEY' in key:
                     print(f"  {key}=******")
                 else:
                     print(f"  {key}={value}")
         print("")
-    
-    setup_datastream_cmd = f"{sys.executable} setup_datastream.py --namespace {namespace} {logsdb_arg}"
+
+    setup_datastream_cmd = f"{sys.executable} setup_datastream.py --namespace {namespace} {logsdb_arg} {drop_original_arg}"
     if args.debug:
         setup_datastream_cmd += " --debug"
-    
+
     try:
         setup_datastream_result = run_command(setup_datastream_cmd, shell=True)
         
@@ -455,7 +519,7 @@ def main():
         test_result = "FAILED"
     
     # Generate a test report
-    create_test_report(data_stream, use_logsdb, log_type, final_count, test_result)
+    create_test_report(data_stream, use_logsdb, log_type, final_count, drop_event_original, test_result)
     
     # Cleanup if not disabled
     if not args.no_cleanup:

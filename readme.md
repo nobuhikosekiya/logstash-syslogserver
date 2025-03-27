@@ -205,6 +205,137 @@ python test_count_logs.py --list-streams
 - Consider using a dedicated Elasticsearch role for Logstash with limited privileges
 - For production use, enable SSL/TLS for Logstash inputs
 
+## Storage Optimization Options
+
+This system offers two primary ways to optimize log storage in Elasticsearch:
+
+### 1. LogsDB Mode
+
+For optimized log storage in Elasticsearch, you can enable LogsDB mode:
+
+```bash
+python test_syslog_server.py --log-type linux --logsdb
+```
+
+This configures Elasticsearch indices with LogsDB-specific settings that optimize storage and query performance for logs.
+
+### 2. Drop event.original Field
+
+To reduce storage requirements further, you can configure Logstash to drop the `event.original` field:
+
+```bash
+python test_syslog_server.py --drop-event-original
+```
+
+The `event.original` field typically contains a copy of the original raw message, which can significantly increase storage requirements. Dropping this field can lead to substantial storage savings, especially with high-volume log ingestion.
+
+You can combine both options for maximum storage efficiency:
+
+```bash
+python test_syslog_server.py --log-type linux --logsdb --drop-event-original
+```
+
+### Additional Environment Variables
+
+You can also set these options directly in your `.env` file:
+
+```
+# Enable LogsDB mode
+ES_DATA_STREAM_NAMESPACE=logsdb
+
+# Drop event.original field
+DROP_EVENT_ORIGINAL=true
+```
+
+## Storage Optimization Options
+
+This system offers several ways to optimize log storage in Elasticsearch:
+
+### 1. LogsDB Mode
+
+For optimized log storage in Elasticsearch, you can enable LogsDB mode:
+
+```bash
+python test_syslog_server.py --log-type linux --logsdb
+```
+
+This configures Elasticsearch indices with LogsDB-specific settings that optimize storage and query performance for logs.
+
+### 2. Optimizing the event.original Field
+
+The `event.original` field contains a copy of the original raw message and can significantly increase storage requirements. You have two options to optimize this:
+
+#### Option A: Change event.original to keyword type (Default)
+
+By default, the system will map `event.original` as a `keyword` type instead of `text`. This reduces storage requirements and improves query performance while keeping the original message data available.
+
+No additional configuration is needed for this option as it's the default behavior.
+
+#### Option B: Drop event.original field entirely
+
+For maximum storage savings, you can configure Logstash to drop the `event.original` field completely:
+
+```bash
+python test_syslog_server.py --drop-event-original
+```
+
+This option will save the most space but means you won't have access to the full original message.
+
+### Combined Optimizations
+
+You can combine all optimizations for maximum storage efficiency:
+
+```bash
+python test_syslog_server.py --log-type linux --logsdb --drop-event-original
+```
+
+### Environment Variables
+
+You can also set these options directly in your `.env` file:
+
+```
+# Enable LogsDB mode
+ES_DATA_STREAM_NAMESPACE=logsdb
+
+# Drop event.original field
+DROP_EVENT_ORIGINAL=true
+```
+
+### Storage Comparison
+
+Based on typical usage patterns, you can expect approximately these storage savings:
+
+| Optimization | Approximate Storage Savings |
+|--------------|----------------------------|
+| Default (text field) | Baseline |
+| Keyword mapping | 10-20% savings |
+| Drop event.original | 30-50% savings |
+| LogsDB mode | 20-40% savings |
+| All combined | 50-70% savings |
+
+Actual savings will vary based on your specific log data.
+
 ## License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
+
+## Data Stream Naming Conventions
+
+The system uses a predictable naming convention for data streams to make it easy to identify the configuration:
+
+```
+logs-syslog-{base_namespace}-{log_type}[-no-original]
+```
+
+Where:
+- **base_namespace**: Either "default" or "logsdb" depending on whether LogsDB mode is enabled
+- **log_type**: The type of logs being processed (windows, linux, mac, ssh, apache, all)
+- **-no-original**: Appended when event.original field is dropped
+
+Examples:
+- `logs-syslog-default-linux`: Standard configuration with Linux logs
+- `logs-syslog-logsdb-windows`: LogsDB mode with Windows logs
+- `logs-syslog-default-all-no-original`: All log types without event.original field
+- `logs-syslog-logsdb-apache-no-original`: LogsDB mode with Apache logs and no event.original field
+
+This naming convention makes it easy to identify the storage optimization settings used for each data stream.

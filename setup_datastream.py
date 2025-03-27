@@ -117,7 +117,7 @@ def delete_datastream(client, data_stream_name):
         print(f"Error deleting data stream: {str(e)}")
         return False
 
-def create_index_template(client, template_name, index_pattern, logsdb_mode=False):
+def create_index_template(client, template_name, index_pattern, logsdb_mode=False, drop_event_original=False):
     """Create an index template for the data stream"""
     # Start with base settings
     settings = {
@@ -132,48 +132,59 @@ def create_index_template(client, template_name, index_pattern, logsdb_mode=Fals
     if logsdb_mode:
         settings["index"]["mode"] = "logsdb"
     
+    # Create base mappings
+    mappings = {
+        "properties": {
+            "@timestamp": {"type": "date"},
+            "host": {
+                "properties": {
+                    "name": {"type": "keyword"}
+                }
+            },
+            "message": {"type": "text"},
+            "log_type": {"type": "keyword"},
+            "log": {
+                "properties": {
+                    "syslog": {
+                        "properties": {
+                            "facility": {
+                                "properties": {
+                                    "name": {"type": "keyword"}
+                                }
+                            },
+                            "severity": {
+                                "properties": {
+                                    "name": {"type": "keyword"}
+                                }
+                            },
+                            "priority": {"type": "long"}
+                        }
+                    }
+                }
+            },
+            "source": {
+                "properties": {
+                    "ip": {"type": "ip"}
+                }
+            }
+        }
+    }
+    
+    # Add event.original mapping as keyword (unless we're dropping it entirely)
+    if not drop_event_original:
+        mappings["properties"]["event"] = {
+            "properties": {
+                "original": {"type": "keyword", "ignore_above": 10240}
+            }
+        }
+    
     template = {
         "index_patterns": [index_pattern],
         "data_stream": {},
         "priority": 500,
         "template": {
             "settings": settings,
-            "mappings": {
-                "properties": {
-                    "@timestamp": {"type": "date"},
-                    "host": {
-                        "properties": {
-                            "name": {"type": "keyword"}
-                        }
-                    },
-                    "message": {"type": "text"},
-                    "log_type": {"type": "keyword"},
-                    "log": {
-                        "properties": {
-                            "syslog": {
-                                "properties": {
-                                    "facility": {
-                                        "properties": {
-                                            "name": {"type": "keyword"}
-                                        }
-                                    },
-                                    "severity": {
-                                        "properties": {
-                                            "name": {"type": "keyword"}
-                                        }
-                                    },
-                                    "priority": {"type": "long"}
-                                }
-                            }
-                        }
-                    },
-                    "source": {
-                        "properties": {
-                            "ip": {"type": "ip"}
-                        }
-                    }
-                }
-            }
+            "mappings": mappings
         }
     }
     
@@ -181,6 +192,8 @@ def create_index_template(client, template_name, index_pattern, logsdb_mode=Fals
         response = client.indices.put_index_template(name=template_name, body=template)
         if response.get("acknowledged"):
             print(f"Index template '{template_name}' created successfully")
+            if not drop_event_original:
+                print(f"  - Configured event.original as keyword type")
         else:
             print(f"Failed to create index template: {response}")
             sys.exit(1)
@@ -196,6 +209,8 @@ def main():
     parser.add_argument('--es-endpoint', dest='es_endpoint', help='Elasticsearch endpoint (overrides .env)', default=None)
     parser.add_argument('--api-key', dest='api_key', help='Elasticsearch API Key (overrides .env)', default=None)
     parser.add_argument('--logsdb', dest='logsdb_mode', action='store_true', help='Enable logsdb mode in index settings')
+    parser.add_argument('--drop-event-original', dest='drop_event_original', action='store_true', 
+                       help='Configure template assuming event.original will be dropped')
     parser.add_argument('--debug', action='store_true', help='Enable debug output')
     
     args = parser.parse_args()
@@ -222,6 +237,14 @@ def main():
             if args.debug:
                 print("Overriding API_KEY with command line value (masked)")
         
+        # Check if DROP_EVENT_ORIGINAL is set in the environment
+        drop_event_original = args.drop_event_original
+        drop_env_var = os.environ.get('DROP_EVENT_ORIGINAL', '').lower()
+        if drop_env_var in ('true', '1', 'yes'):
+            drop_event_original = True
+            if args.debug:
+                print("DROP_EVENT_ORIGINAL set to true from environment")
+        
         # Create Elasticsearch client
         client = create_es_client(es_endpoint, api_key)
         
@@ -240,13 +263,18 @@ def main():
         if args.logsdb_mode:
             print("LogsDB mode is enabled for this data stream")
         
+        if drop_event_original:
+            print("Template configured to support dropping event.original field")
+        else:
+            print("Template configured with event.original as keyword type")
+        
         # Delete existing data stream if it exists
         deletion_success = delete_datastream(client, data_stream_name)
         if not deletion_success:
             print("Warning: Could not completely delete the existing data stream.")
         
         # Create index template (required for data stream auto-creation)
-        create_index_template(client, template_name, index_pattern, args.logsdb_mode)
+        create_index_template(client, template_name, index_pattern, args.logsdb_mode, drop_event_original)
         
         print("Setup completed successfully!")
         print("The data stream will be created automatically when Logstash ingests the first log entry.")
