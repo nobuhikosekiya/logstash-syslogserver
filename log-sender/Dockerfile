@@ -2,7 +2,7 @@ FROM python:3.9-slim
 
 WORKDIR /app
 
-# Install required packages - removed netcat
+# Install required packages
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         rsyslog \
@@ -15,8 +15,9 @@ RUN apt-get update && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-# Create log directory
+# Create required directories
 RUN mkdir -p /logs
+RUN mkdir -p /archive
 
 # Copy the scripts
 COPY download_logs.py /app/
@@ -36,3 +37,5 @@ ENV LOGSTASH_PORT=5514
 ENV DOWNLOAD_LOGS=true
 ENV LOG_SEND_INTERVAL=0
 ENV LOG_TYPE=all
+
+CMD ["/app/entrypoint.sh"]

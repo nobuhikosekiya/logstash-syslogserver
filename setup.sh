@@ -9,7 +9,22 @@ echo "=========================================="
 
 # Create required directories
 echo "Creating directory structure..."
-mkdir -p logstash/pipeline logstash/secrets logs
+mkdir -p logstash/pipeline logstash/secrets logs archive
+
+# Create logstash.yml if it doesn't exist
+if [ ! -f logstash.yml ]; then
+    cat > logstash.yml << EOF
+http.host: 0.0.0.0
+log.level: info
+path.config: /usr/share/logstash/pipeline
+config.reload.automatic: true
+config.reload.interval: 30s
+pipeline.batch.delay: 50
+pipeline.batch.size: 125
+pipeline.workers: 2
+EOF
+    echo "Created logstash.yml"
+fi
 
 # Verify syslog server configuration exists
 if [ ! -f logstash/pipeline/syslog-server.conf ]; then
@@ -79,8 +94,22 @@ else
     echo "WARNING: .env file not found. Create it before running docker-compose."
 fi
 
+# Create secrets directory with proper permissions
+mkdir -p logstash/secrets
 chmod 700 logstash/secrets
 echo "Set secure permissions on logstash/secrets directory."
+
+# Make test_syslog_server.py executable
+if [ -f test_syslog_server.py ]; then
+    chmod +x test_syslog_server.py
+    echo "Made test_syslog_server.py executable."
+fi
+
+# Make setup_datastream.py executable
+if [ -f setup_datastream.py ]; then
+    chmod +x setup_datastream.py
+    echo "Made setup_datastream.py executable."
+fi
 
 # Final instructions
 echo ""
@@ -91,5 +120,7 @@ echo "1. Ensure your .env file is configured with proper Elasticsearch credentia
 echo "2. Run 'python setup_datastream.py' to configure the Elasticsearch data stream"
 echo "3. Start the system by running: docker-compose up -d"
 echo "4. Monitor the logs with: docker-compose logs -f"
+echo ""
+echo "Or run the test script with: python test_syslog_server.py [--log-type windows|linux|mac|all] [--logsdb]"
 echo ""
 echo "For more information, refer to the README.md file."

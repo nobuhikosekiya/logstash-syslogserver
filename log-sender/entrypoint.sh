@@ -20,19 +20,22 @@ fi
 
 echo "Using LOG_TYPE: $LOG_TYPE"
 
-# Create logs directory if it doesn't exist
+# Create required directories
 mkdir -p /logs
+mkdir -p /archive
 
 # Check if we need to download log files
 if [ "$DOWNLOAD_LOGS" = "true" ]; then
     echo "Downloading log files for LOG_TYPE: $LOG_TYPE"
     
-    # Call download_logs.py with explicit log-type parameter
-    python /app/download_logs.py --log-type "$LOG_TYPE" --output-dir "/logs"
+    # Call download_logs.py with explicit log-type parameter and archive directory
+    python /app/download_logs.py --log-type "$LOG_TYPE" --output-dir "/logs" --archive-dir "/archive"
     
     # Verify download results
     echo "Contents of /logs directory after download:"
     ls -la /logs
+    echo "Contents of /archive directory:"
+    ls -la /archive
 else
     echo "Skipping log download (DOWNLOAD_LOGS=$DOWNLOAD_LOGS)"
 fi

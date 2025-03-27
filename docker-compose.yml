@@ -35,6 +35,7 @@ services:
     container_name: log-sender
     volumes:
       - ./logs:/logs
+      - ./archive:/archive
     environment:
       - LOGSTASH_HOST=logstash
       - LOGSTASH_PORT=5514
@@ -43,7 +44,7 @@ services:
       - PROTOCOL=${PROTOCOL:-tcp}
       - LOOP_LOGS=${LOOP_LOGS:-false}
       - KEEP_RUNNING=${KEEP_RUNNING:-false}
-      - LOG_TYPE=${LOG_TYPE:-all}
+      - LOG_TYPE=${LOG_TYPE}
     command: ["/app/entrypoint.sh"]
     networks:
       - elastic

@@ -7,6 +7,10 @@ logs/*
 *.log
 logs/*.tar.gz
 
+# Log files and downloaded logs
+archive/*
+archive/*.tar.gz
+
 # Python virtual environment and cache
 venv/
 __pycache__/
