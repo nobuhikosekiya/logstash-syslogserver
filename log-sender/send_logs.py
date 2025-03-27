@@ -61,6 +61,67 @@ def send_log(sock, logstash_host, logstash_port, line, protocol='tcp'):
         logger.error(f"Error sending log: {e}")
         return False
 
+def find_log_files(log_dir, log_type):
+    """Find log files based on log type"""
+    log_files = []
+    log_type_lower = log_type.lower()
+    
+    logger.info(f"Looking for log files of type '{log_type}' in {log_dir}")
+    
+    if log_type_lower == 'all':
+        # Get all log files
+        log_files = glob.glob(f"{log_dir}/**/*.log", recursive=True)
+        log_files.extend(glob.glob(f"{log_dir}/*.log"))
+        logger.info(f"Found {len(log_files)} log files for all types")
+    else:
+        # Look for the specific type's directory
+        type_dir = os.path.join(log_dir, log_type.capitalize())
+        if os.path.exists(type_dir):
+            logger.info(f"Found directory for {log_type}: {type_dir}")
+            log_files.extend(glob.glob(f"{type_dir}/**/*.log", recursive=True))
+        
+        # Look for files with the log type in their name
+        main_log_file = os.path.join(log_dir, f"{log_type}.log")
+        main_log_file_cap = os.path.join(log_dir, f"{log_type.capitalize()}.log")
+        
+        if os.path.exists(main_log_file):
+            logger.info(f"Found main log file: {main_log_file}")
+            log_files.append(main_log_file)
+        
+        if os.path.exists(main_log_file_cap) and main_log_file_cap != main_log_file:
+            logger.info(f"Found capitalized log file: {main_log_file_cap}")
+            log_files.append(main_log_file_cap)
+        
+        # Search for files that start with the log type
+        for log_file in glob.glob(f"{log_dir}/*.log"):
+            file_basename = os.path.basename(log_file).lower()
+            if file_basename.startswith(log_type_lower) and log_file not in log_files:
+                logger.info(f"Found matching log file: {log_file}")
+                log_files.append(log_file)
+        
+        # Search subdirectories too
+        for log_file in glob.glob(f"{log_dir}/**/*.log", recursive=True):
+            file_basename = os.path.basename(log_file).lower()
+            if file_basename.startswith(log_type_lower) and log_file not in log_files:
+                logger.info(f"Found matching log file in subdirectory: {log_file}")
+                log_files.append(log_file)
+    
+    # Remove duplicates while preserving order
+    unique_files = []
+    for file_path in log_files:
+        if file_path not in unique_files:
+            unique_files.append(file_path)
+    
+    # Log what we found
+    if not unique_files:
+        logger.warning(f"No log files found for type '{log_type}'")
+    else:
+        logger.info(f"Found {len(unique_files)} unique log files for type '{log_type}':")
+        for log_file in unique_files:
+            logger.info(f"  - {log_file}")
+    
+    return unique_files
+
 def main():
     parser = argparse.ArgumentParser(description='Send log files to syslog server')
     parser.add_argument('--host', dest='host', help='Logstash host', 
@@ -77,11 +138,22 @@ def main():
     parser.add_argument('--log-type', dest='log_type', help='Log type to filter (windows, linux, mac, all)', 
                         default=os.environ.get('LOG_TYPE', 'all'))
     parser.add_argument('--delete-after-send', dest='delete_after_send', action='store_true',
-                        help='Delete log files after sending', default=True)
+                        help='Delete log files after sending', default=False)
     parser.add_argument('--keep-logs', dest='keep_logs', action='store_true',
-                        help='Keep log files after sending (overrides delete-after-send)')
+                        help='Keep log files after sending (overrides delete-after-send)', default=True)
     
     args = parser.parse_args()
+    
+    # Display starting configuration
+    logger.info("=== Log Sender Configuration ===")
+    logger.info(f"Logstash Host: {args.host}")
+    logger.info(f"Logstash Port: {args.port}")
+    logger.info(f"Log Directory: {args.log_dir}")
+    logger.info(f"Log Type: {args.log_type}")
+    logger.info(f"Protocol: {args.protocol}")
+    logger.info(f"Interval: {args.interval} seconds")
+    logger.info(f"Loop Mode: {args.loop}")
+    logger.info(f"Delete After Send: {args.delete_after_send and not args.keep_logs}")
     
     # Determine whether to delete logs after sending
     delete_after_send = args.delete_after_send and not args.keep_logs
@@ -99,25 +171,12 @@ def main():
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         logger.info(f"Created UDP socket for syslog server at {args.host}:{args.port}")
     
-    # Find all log files based on log type
-    if args.log_type.lower() == 'all':
-        log_files = glob.glob(f"{args.log_dir}/**/*.log", recursive=True)
-    else:
-        # Filter log files by type
-        log_files = []
-        target_dir = os.path.join(args.log_dir, args.log_type.capitalize())
-        if os.path.exists(target_dir):
-            log_files.extend(glob.glob(f"{target_dir}/**/*.log", recursive=True))
-        else:
-            # Try finding files with matching filename pattern
-            log_files.extend(glob.glob(f"{args.log_dir}/**/{args.log_type}*.log", recursive=True))
-            log_files.extend(glob.glob(f"{args.log_dir}/**/{args.log_type.capitalize()}*.log", recursive=True))
-        
+    # Find log files for the specified type
+    log_files = find_log_files(args.log_dir, args.log_type)
+    
     if not log_files:
         logger.error(f"No log files found for type '{args.log_type}' in {args.log_dir}")
         sys.exit(1)
-    
-    logger.info(f"Found {len(log_files)} log files to process for log type '{args.log_type}'")
     
     # Track files that have been processed and can be deleted
     processed_files = []

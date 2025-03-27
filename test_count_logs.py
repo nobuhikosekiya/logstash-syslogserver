@@ -131,28 +131,47 @@ def list_data_streams(client, pattern="logs-syslog-*"):
 def count_log_lines_in_files(log_dir, log_type):
     """Count total number of log lines in the log files"""
     total_lines = 0
+    log_files = []
     
     # Determine which files to count based on log_type
     if log_type.lower() == 'all':
+        # Get all log files in any subdirectory and the main directory
         log_files = glob.glob(f"{log_dir}/**/*.log", recursive=True)
+        log_files.extend(glob.glob(f"{log_dir}/*.log"))
     else:
+        # Convert log_type to lowercase for case-insensitive comparison
+        log_type_lower = log_type.lower()
+        
         # Check if a specific directory for this log type exists
         type_dir = os.path.join(log_dir, log_type.capitalize())
         if os.path.exists(type_dir):
-            log_files = glob.glob(f"{type_dir}/**/*.log", recursive=True)
-        else:
-            # Try finding files with matching filename pattern
-            log_files = glob.glob(f"{log_dir}/**/{log_type}*.log", recursive=True)
-            log_files.extend(glob.glob(f"{log_dir}/**/{log_type.capitalize()}*.log", recursive=True))
+            log_files.extend(glob.glob(f"{type_dir}/**/*.log", recursive=True))
+        
+        # Check for files with matching names in the main logs directory and subdirectories
+        all_log_files = glob.glob(f"{log_dir}/*.log") + glob.glob(f"{log_dir}/**/*.log", recursive=True)
+        
+        # Filter for files that match the log type (case-insensitive)
+        for file_path in all_log_files:
+            filename = os.path.basename(file_path).lower()
+            if filename == f"{log_type_lower}.log" or filename.startswith(f"{log_type_lower}"):
+                log_files.append(file_path)
+    
+    # Remove duplicates while preserving order
+    unique_files = []
+    for file_path in log_files:
+        if file_path not in unique_files:
+            unique_files.append(file_path)
+    log_files = unique_files
     
     if not log_files:
         print(f"No log files found for type '{log_type}' in {log_dir}")
         return 0
     
-    print(f"Counting lines in {len(log_files)} log files...")
+    print(f"Counting lines in {len(log_files)} log files:")
     
     for log_file in log_files:
         try:
+            print(f"  Found log file: {log_file}")
             with open(log_file, 'r', encoding='utf-8', errors='replace') as f:
                 line_count = sum(1 for line in f if line.strip())  # Count non-empty lines
                 total_lines += line_count
@@ -167,17 +186,16 @@ def main():
     parser.add_argument('--type', dest='type', help='Data stream type', default='logs')
     parser.add_argument('--dataset', dest='dataset', help='Data stream dataset', default='syslog')
     parser.add_argument('--namespace', dest='namespace', help='Data stream namespace', default='default')
-    parser.add_argument('--minutes', dest='minutes', type=int, help='Time range in minutes', default=None)
     parser.add_argument('--query', dest='query', help='Custom query (JSON string)', default=None)
     parser.add_argument('--es-endpoint', dest='es_endpoint', help='Elasticsearch endpoint (overrides .env)', default=None)
     parser.add_argument('--api-key', dest='api_key', help='Elasticsearch API Key (overrides .env)', default=None)
     parser.add_argument('--watch', dest='watch', action='store_true', help='Watch mode: continuously check count')
     parser.add_argument('--interval', dest='interval', type=int, help='Watch interval in seconds', default=5)
-    parser.add_argument('--log-type', dest='log_type', help='Filter by log type', default=None)
+    parser.add_argument('--log-type', dest='log_type', help='Log type for displaying info only', default=None)
     parser.add_argument('--list-streams', dest='list_streams', action='store_true', help='List all syslog data streams')
     parser.add_argument('--log-dir', dest='log_dir', help='Directory containing log files', default='logs')
-    parser.add_argument('--auto-stop', dest='auto_stop', action='store_true', 
-                        help='Auto stop when log count matches expected line count')
+    parser.add_argument('--no-change-timeout', dest='no_change_timeout', type=int, 
+                      help='Stop watching after this many seconds with no new logs', default=10)
     parser.add_argument('--timeout', dest='timeout', type=int, help='Maximum watch time in seconds', default=300)
     parser.add_argument('--debug', dest='debug', action='store_true', help='Enable debug output')
     
@@ -217,25 +235,20 @@ def main():
         data_stream_name = f"{args.type}-{args.dataset}-{args.namespace}"
         
         if args.watch:
-            # Only count log lines if auto-stop is enabled
-            expected_line_count = 0
-            if args.auto_stop:
-                expected_line_count = count_log_lines_in_files(args.log_dir, args.log_type)
-                print(f"Expected log count based on files: {expected_line_count}")
-            
             print(f"Watching log count for data stream: {data_stream_name}")
             if args.log_type:
-                print(f"Filtering for log type: {args.log_type}")
-            
-            if not args.auto_stop:
-                print("Press Ctrl+C to stop...")
+                print(f"Log type (for info only): {args.log_type}")
+            print(f"Will stop after {args.no_change_timeout} seconds with no new logs")
             
             prev_count = 0
             start_time = time.time()
+            last_change_time = start_time
+            
             try:
                 while True:
                     current_time = time.time()
                     elapsed_seconds = int(current_time - start_time)
+                    seconds_since_last_change = int(current_time - last_change_time)
                     
                     count = count_logs(client, data_stream_name, args.query)
                     new_logs = count - prev_count if count > prev_count else 0
@@ -244,22 +257,25 @@ def main():
                     if prev_count == 0:
                         print(f"[{elapsed_seconds}s] Current log count: {count}")
                     else:
-                        print(f"[{elapsed_seconds}s] Current log count: {count} (+{new_logs} new)")
+                        print(f"[{elapsed_seconds}s] Current log count: {count} (+{new_logs} new, {seconds_since_last_change}s since last change)")
+                    
+                    # Update last change time if we have new logs
+                    if new_logs > 0:
+                        last_change_time = current_time
+                        seconds_since_last_change = 0
                     
                     prev_count = count
                     
-                    # Check auto-stop conditions
-                    if args.auto_stop and expected_line_count > 0 and count >= expected_line_count:
-                        print(f"\nTarget log count reached: {count} of {expected_line_count}")
-                        print("Auto-stopping watch mode.")
+                    # Check if we've reached the no-change timeout
+                    if seconds_since_last_change >= args.no_change_timeout and count > 0:
+                        print(f"\nNo new logs received for {args.no_change_timeout} seconds")
+                        print(f"Final log count: {count}")
                         break
                     
-                    # Check timeout
+                    # Check overall timeout
                     if args.timeout > 0 and elapsed_seconds >= args.timeout:
-                        print(f"\nTimeout reached ({args.timeout} seconds)")
-                        if args.auto_stop and expected_line_count > 0:
-                            print(f"Only received {count} of expected {expected_line_count} logs ({count/expected_line_count:.1%})")
-                        print("Stopping watch mode.")
+                        print(f"\nOverall timeout reached ({args.timeout} seconds)")
+                        print(f"Final log count: {count}")
                         break
                     
                     time.sleep(args.interval)
@@ -286,7 +302,7 @@ def main():
                 print("- Verify Docker containers are running: docker-compose ps")
                 print("- Check Logstash logs: docker-compose logs logstash")
                 print("- Check log-sender logs: docker-compose logs log-sender")
-                print("- Use --watch --auto-stop flag to monitor as logs come in")
+                print("- Use --watch flag to monitor as logs come in")
         
     except Exception as e:
         print(f"Error: {str(e)}")
