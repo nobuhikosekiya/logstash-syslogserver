@@ -196,7 +196,7 @@ def main():
     parser.add_argument('--log-dir', dest='log_dir', help='Directory containing log files', default='logs')
     parser.add_argument('--no-change-timeout', dest='no_change_timeout', type=int, 
                       help='Stop watching after this many seconds with no new logs', default=10)
-    parser.add_argument('--timeout', dest='timeout', type=int, help='Maximum watch time in seconds', default=300)
+    parser.add_argument('--timeout', dest='timeout', type=int, help='Maximum watch time in seconds', default=6000)
     parser.add_argument('--debug', dest='debug', action='store_true', help='Enable debug output')
     
     args = parser.parse_args()

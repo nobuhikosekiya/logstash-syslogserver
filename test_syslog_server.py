@@ -209,8 +209,8 @@ Test conducted on: {now}
 
 def main():
     parser = argparse.ArgumentParser(description='Test Logstash Syslog Server to Elasticsearch setup')
-    parser.add_argument('--log-type', choices=['windows', 'linux', 'mac', 'all'], default='all',
-                        help='Log type to process (windows, linux, mac, or all)')
+    parser.add_argument('--log-type', choices=['windows', 'linux', 'mac', 'ssh', 'apache' 'all'], default='all',
+                        help='Log type to process (windows, linux, mac, ssh, apache or all)')
     parser.add_argument('--logsdb', action='store_true', 
                         help='Enable LogsDB mode for Elasticsearch indices')
     parser.add_argument('--no-cleanup', action='store_true',
@@ -432,7 +432,7 @@ def main():
     # Monitor log count with the test script
     print("Monitoring log count until ingestion is complete (10 seconds with no new logs)...")
     try:
-        run_command(f"{sys.executable} test_count_logs.py --namespace {namespace} --watch --interval 2 --timeout 300 --no-change-timeout 10", shell=True)
+        run_command(f"{sys.executable} test_count_logs.py --namespace {namespace} --watch --interval 2 --no-change-timeout 10", shell=True)
     except KeyboardInterrupt:
         print("\nMonitoring interrupted by user.")
     
