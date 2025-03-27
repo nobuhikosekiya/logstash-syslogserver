@@ -13,7 +13,7 @@ LOG_FILES = {
     "windows": "https://zenodo.org/records/8196385/files/Windows.tar.gz?download=1",
     "linux": "https://zenodo.org/records/8196385/files/Linux.tar.gz?download=1",
     "mac": "https://zenodo.org/records/8196385/files/Mac.tar.gz?download=1",
-    "openssh": "https://zenodo.org/records/8196385/files/SSH.tar.gz?download=1",
+    "ssh": "https://zenodo.org/records/8196385/files/SSH.tar.gz?download=1",
     "apache": "https://zenodo.org/records/8196385/files/Apache.tar.gz?download=1"
 }
 
@@ -113,8 +113,8 @@ def check_existing_logs(log_dir, log_type):
 
 def main():
     parser = argparse.ArgumentParser(description='Download and extract log files')
-    parser.add_argument('--log-type', dest='log_type', choices=['windows', 'linux', 'mac', 'openssh', 'apache', 'all'], 
-                      help='Type of log to download (windows, linux, mac, openssh, apache or all)', default='all')
+    parser.add_argument('--log-type', dest='log_type', choices=['windows', 'linux', 'mac', 'ssh', 'apache', 'all'], 
+                      help='Type of log to download (windows, linux, mac, ssh, apache or all)', default='all')
     parser.add_argument('--output-dir', dest='output_dir', help='Output directory',
                       default="/logs")
     parser.add_argument('--archive-dir', dest='archive_dir', help='Archive directory for downloaded files',

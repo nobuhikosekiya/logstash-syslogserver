@@ -52,7 +52,7 @@ echo "Logstash service should be ready. Starting log sender..."
 
 python /app/send_logs.py --host "${LOGSTASH_HOST}" --port "${LOGSTASH_PORT}" \
                         --log-dir "/logs" --interval "${LOG_SEND_INTERVAL}" \
-                        --protocol "${PROTOCOL}" ${LOOP_FLAG}
+                        --protocol "${PROTOCOL}" ${LOOP_FLAG} --delete-after-send
 
 # Keep container running if specified
 if [ "$KEEP_RUNNING" = "true" ]; then

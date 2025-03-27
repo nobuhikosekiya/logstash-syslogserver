@@ -209,8 +209,8 @@ Test conducted on: {now}
 
 def main():
     parser = argparse.ArgumentParser(description='Test Logstash Syslog Server to Elasticsearch setup')
-    parser.add_argument('--log-type', choices=['windows', 'linux', 'mac', 'openssh', 'apache', 'all'], default='all',
-                        help='Log type to process (windows, linux, mac, openssh, apache or all)')
+    parser.add_argument('--log-type', choices=['windows', 'linux', 'mac', 'ssh', 'apache', 'all'], default='all',
+                        help='Log type to process (windows, linux, mac, ssh, apache or all)')
     parser.add_argument('--logsdb', action='store_true', 
                         help='Enable LogsDB mode for Elasticsearch indices')
     parser.add_argument('--no-cleanup', action='store_true',

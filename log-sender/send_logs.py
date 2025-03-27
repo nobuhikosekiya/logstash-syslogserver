@@ -31,7 +31,7 @@ def format_syslog_message(line, host=None):
     """
     Format message in syslog format if it isn't already
     """
-    # Check if line already has a timestamp at the beginning
+    # Check if line is empty
     if line.strip() == '':
         return None
         
@@ -74,8 +74,17 @@ def main():
     parser.add_argument('--protocol', dest='protocol', help='Protocol (tcp or udp)', 
                         default=os.environ.get('PROTOCOL', 'tcp'))
     parser.add_argument('--loop', dest='loop', action='store_true', help='Loop through logs continuously')
+    parser.add_argument('--log-type', dest='log_type', help='Log type to filter (windows, linux, mac, all)', 
+                        default=os.environ.get('LOG_TYPE', 'all'))
+    parser.add_argument('--delete-after-send', dest='delete_after_send', action='store_true',
+                        help='Delete log files after sending', default=True)
+    parser.add_argument('--keep-logs', dest='keep_logs', action='store_true',
+                        help='Keep log files after sending (overrides delete-after-send)')
     
     args = parser.parse_args()
+    
+    # Determine whether to delete logs after sending
+    delete_after_send = args.delete_after_send and not args.keep_logs
     
     # Create socket based on protocol
     if args.protocol.lower() == 'tcp':
@@ -90,13 +99,28 @@ def main():
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         logger.info(f"Created UDP socket for syslog server at {args.host}:{args.port}")
     
-    # Find all log files
-    log_files = glob.glob(f"{args.log_dir}/**/*.log", recursive=True)
+    # Find all log files based on log type
+    if args.log_type.lower() == 'all':
+        log_files = glob.glob(f"{args.log_dir}/**/*.log", recursive=True)
+    else:
+        # Filter log files by type
+        log_files = []
+        target_dir = os.path.join(args.log_dir, args.log_type.capitalize())
+        if os.path.exists(target_dir):
+            log_files.extend(glob.glob(f"{target_dir}/**/*.log", recursive=True))
+        else:
+            # Try finding files with matching filename pattern
+            log_files.extend(glob.glob(f"{args.log_dir}/**/{args.log_type}*.log", recursive=True))
+            log_files.extend(glob.glob(f"{args.log_dir}/**/{args.log_type.capitalize()}*.log", recursive=True))
+        
     if not log_files:
-        logger.error(f"No log files found in {args.log_dir}")
+        logger.error(f"No log files found for type '{args.log_type}' in {args.log_dir}")
         sys.exit(1)
     
-    logger.info(f"Found {len(log_files)} log files to process")
+    logger.info(f"Found {len(log_files)} log files to process for log type '{args.log_type}'")
+    
+    # Track files that have been processed and can be deleted
+    processed_files = []
     
     # Process each log file
     while True:
@@ -127,11 +151,40 @@ def main():
                             # Add delay if specified
                             if args.interval > 0:
                                 time.sleep(args.interval)
+                
+                # Add file to processed list for deletion
+                if delete_after_send and log_file not in processed_files:
+                    processed_files.append(log_file)
             
             except Exception as e:
                 logger.error(f"Error processing {log_file}: {e}")
         
         logger.info(f"Sent {total_sent} of {total_lines} log lines to syslog server")
+        
+        # Delete processed files if requested
+        if delete_after_send and processed_files:
+            logger.info(f"Deleting {len(processed_files)} processed log files")
+            for file_path in processed_files:
+                try:
+                    # Check if the file still exists (may be deleted in a previous loop)
+                    if os.path.exists(file_path):
+                        os.remove(file_path)
+                        logger.info(f"Deleted {file_path}")
+                except Exception as e:
+                    logger.error(f"Error deleting {file_path}: {e}")
+            
+            # Empty the processed files list
+            processed_files = []
+            
+            # Update the list of log files (remove deleted files)
+            if args.loop:
+                log_files = [f for f in log_files if os.path.exists(f)]
+                logger.info(f"Updated log file list: {len(log_files)} files remaining")
+                
+                # Exit if no log files remain
+                if not log_files:
+                    logger.info("No log files remaining. Exiting.")
+                    break
         
         if not args.loop:
             break
