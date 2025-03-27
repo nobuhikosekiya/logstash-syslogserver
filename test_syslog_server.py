@@ -22,8 +22,8 @@ def colored_print(text, color):
     """Print colored text to the terminal"""
     print(f"{color}{text}{Colors.NC}")
 
-def update_env_file_with_options(namespace, log_type, drop_event_original=False):
-    """Update the .env file with the namespace, log type, and drop_event_original setting"""
+def update_env_file_with_options(namespace, log_type, drop_event_original=False, drop_message=False):
+    """Update the .env file with the namespace, log type, and field dropping settings"""
     if not os.path.exists(".env"):
         print(".env file not found")
         return False
@@ -35,12 +35,14 @@ def update_env_file_with_options(namespace, log_type, drop_event_original=False)
     # Filter out existing settings
     filtered_lines = [line for line in lines if not line.startswith("ES_DATA_STREAM_NAMESPACE=") 
                       and not line.startswith("LOG_TYPE=")
-                      and not line.startswith("DROP_EVENT_ORIGINAL=")]
+                      and not line.startswith("DROP_EVENT_ORIGINAL=")
+                      and not line.startswith("DROP_MESSAGE=")]
     
     # Add the new values
     filtered_lines.append(f"ES_DATA_STREAM_NAMESPACE={namespace}\n")
     filtered_lines.append(f"LOG_TYPE={log_type}\n")
     filtered_lines.append(f"DROP_EVENT_ORIGINAL={'true' if drop_event_original else 'false'}\n")
+    filtered_lines.append(f"DROP_MESSAGE={'true' if drop_message else 'false'}\n")
     
     # Write back to the .env file
     with open(".env", "w") as file:
@@ -50,6 +52,7 @@ def update_env_file_with_options(namespace, log_type, drop_event_original=False)
     print(f"  namespace: {namespace}")
     print(f"  log_type: {log_type}")
     print(f"  drop_event_original: {'true' if drop_event_original else 'false'}")
+    print(f"  drop_message: {'true' if drop_message else 'false'}")
     
     # Verify the changes
     with open(".env", "r") as file:
@@ -57,10 +60,12 @@ def update_env_file_with_options(namespace, log_type, drop_event_original=False)
         ns_pattern = re.compile(r"ES_DATA_STREAM_NAMESPACE\s*=\s*{0}".format(namespace))
         log_pattern = re.compile(r"LOG_TYPE\s*=\s*{0}".format(log_type))
         
-        # This is the fixed part: properly create a regex for the boolean value
-        expected_value = "true" if drop_event_original else "false"
-        drop_original_pattern = re.compile(r"DROP_EVENT_ORIGINAL\s*=\s*" + re.escape(expected_value))
+        # Create regex for the boolean values
+        expected_original_value = "true" if drop_event_original else "false"
+        drop_original_pattern = re.compile(r"DROP_EVENT_ORIGINAL\s*=\s*" + re.escape(expected_original_value))
 
+        expected_message_value = "true" if drop_message else "false"
+        drop_message_pattern = re.compile(r"DROP_MESSAGE\s*=\s*" + re.escape(expected_message_value))
         
         if not ns_pattern.search(content):
             print("WARNING: ES_DATA_STREAM_NAMESPACE not correctly set in .env")
@@ -68,6 +73,8 @@ def update_env_file_with_options(namespace, log_type, drop_event_original=False)
             print("WARNING: LOG_TYPE not correctly set in .env")
         if not drop_original_pattern.search(content):
             print("WARNING: DROP_EVENT_ORIGINAL not correctly set in .env")
+        if not drop_message_pattern.search(content):
+            print("WARNING: DROP_MESSAGE not correctly set in .env")
     
     return True
 
@@ -123,69 +130,6 @@ def restore_env_file():
         return True
     return False
 
-def update_env_file(namespace, log_type):
-    """Update the .env file with the namespace and log type"""
-    if not os.path.exists(".env"):
-        print(".env file not found")
-        return False
-    
-    # Read the current .env file
-    with open(".env", "r") as file:
-        lines = file.readlines()
-    
-    # Filter out existing namespace and log type settings
-    filtered_lines = [line for line in lines if not line.startswith("ES_DATA_STREAM_NAMESPACE=") 
-                      and not line.startswith("LOG_TYPE=")]
-    
-    # Add the new values
-    filtered_lines.append(f"ES_DATA_STREAM_NAMESPACE={namespace}\n")
-    filtered_lines.append(f"LOG_TYPE={log_type}\n")
-    
-    # Write back to the .env file
-    with open(".env", "w") as file:
-        file.writelines(filtered_lines)
-    
-    print(f"Updated .env file with namespace: {namespace} and log type: {log_type}")
-    
-    # Verify the changes
-    with open(".env", "r") as file:
-        content = file.read()
-        ns_pattern = re.compile(r"ES_DATA_STREAM_NAMESPACE\s*=\s*{0}".format(namespace))
-        log_pattern = re.compile(r"LOG_TYPE\s*=\s*{0}".format(log_type))
-        
-        if not ns_pattern.search(content):
-            print("WARNING: ES_DATA_STREAM_NAMESPACE not correctly set in .env")
-        if not log_pattern.search(content):
-            print("WARNING: LOG_TYPE not correctly set in .env")
-    
-    return True
-
-def activate_virtualenv():
-    """Activate the Python virtual environment"""
-    if platform.system() == "Windows":
-        venv_activate = os.path.join("venv", "Scripts", "activate")
-    else:
-        venv_activate = os.path.join("venv", "bin", "activate")
-    
-    if not os.path.exists(venv_activate):
-        print(f"Virtual environment activation script not found at {venv_activate}")
-        return False
-    
-    # On Windows, we need a different approach since source/. doesn't work
-    if platform.system() == "Windows":
-        # On Windows, we set the virtual environment path in the environment
-        os.environ["VIRTUAL_ENV"] = os.path.abspath("venv")
-        os.environ["PATH"] = os.path.join(os.environ["VIRTUAL_ENV"], "Scripts") + os.pathsep + os.environ["PATH"]
-    else:
-        # On Unix-like systems, we need to run the activate script in the current shell
-        # This doesn't work directly in Python, so we'll use a workaround
-        # We'll export the VIRTUAL_ENV environment variable ourselves
-        os.environ["VIRTUAL_ENV"] = os.path.abspath("venv")
-        os.environ["PATH"] = os.path.join(os.environ["VIRTUAL_ENV"], "bin") + os.pathsep + os.environ["PATH"]
-    
-    print(f"Activated virtual environment: {os.environ.get('VIRTUAL_ENV')}")
-    return True
-
 def check_elasticsearch_settings(env_file=".env"):
     """Check if Elasticsearch settings are configured in the .env file"""
     required_vars = ["ES_ENDPOINT", "ELASTIC_LOGSTASH_API_KEY", "ELASTIC_ADMIN_API_KEY"]
@@ -203,7 +147,8 @@ def check_elasticsearch_settings(env_file=".env"):
     
     return True
 
-def create_test_report(data_stream, use_logsdb, log_type, final_count, drop_event_original=False, test_result="UNKNOWN"):
+def create_test_report(data_stream, use_logsdb, log_type, final_count, drop_event_original=False, 
+                       drop_message=False, test_result="UNKNOWN"):
     """Generate a test report markdown file"""
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
@@ -227,11 +172,13 @@ Test conducted on: {now}
 - LogsDB mode: {use_logsdb}
 - Log type: {log_type}
 - Drop event.original: {drop_event_original}
+- Drop message: {drop_message}
 - Log lines ingested: {final_count}
 
 ## Storage Optimizations
 - LogsDB mode: {'Enabled' if use_logsdb else 'Disabled'}
 - event.original field: {'Dropped' if drop_event_original else 'Kept as keyword type'}
+- message field: {'Dropped' if drop_message else 'Kept'}
 
 ## Environment
 - Docker version: {docker_version}
@@ -261,6 +208,32 @@ Test conducted on: {now}
     
     print(f"Test report generated: test_report.md")
 
+def activate_virtualenv():
+    """Activate the Python virtual environment"""
+    if platform.system() == "Windows":
+        venv_activate = os.path.join("venv", "Scripts", "activate")
+    else:
+        venv_activate = os.path.join("venv", "bin", "activate")
+    
+    if not os.path.exists(venv_activate):
+        print(f"Virtual environment activation script not found at {venv_activate}")
+        return False
+    
+    # On Windows, we need a different approach since source/. doesn't work
+    if platform.system() == "Windows":
+        # On Windows, we set the virtual environment path in the environment
+        os.environ["VIRTUAL_ENV"] = os.path.abspath("venv")
+        os.environ["PATH"] = os.path.join(os.environ["VIRTUAL_ENV"], "Scripts") + os.pathsep + os.environ["PATH"]
+    else:
+        # On Unix-like systems, we need to run the activate script in the current shell
+        # This doesn't work directly in Python, so we'll use a workaround
+        # We'll export the VIRTUAL_ENV environment variable ourselves
+        os.environ["VIRTUAL_ENV"] = os.path.abspath("venv")
+        os.environ["PATH"] = os.path.join(os.environ["VIRTUAL_ENV"], "bin") + os.pathsep + os.environ["PATH"]
+    
+    print(f"Activated virtual environment: {os.environ.get('VIRTUAL_ENV')}")
+    return True
+
 def main():
     parser = argparse.ArgumentParser(description='Test Logstash Syslog Server to Elasticsearch setup')
     parser.add_argument('--log-type', choices=['windows', 'linux', 'mac', 'ssh', 'apache', 'all'], default='all',
@@ -269,6 +242,8 @@ def main():
                         help='Enable LogsDB mode for Elasticsearch indices')
     parser.add_argument('--drop-event-original', action='store_true',
                         help='Drop the event.original field to reduce storage size')
+    parser.add_argument('--drop-message', action='store_true',
+                        help='Drop the message field to reduce storage size')
     parser.add_argument('--no-cleanup', action='store_true',
                         help='Do not restore .env file or stop containers after test')
     parser.add_argument('--debug', action='store_true',
@@ -280,11 +255,13 @@ def main():
     use_logsdb = args.logsdb
     log_type = args.log_type
     drop_event_original = args.drop_event_original
+    drop_message = args.drop_message
     
     colored_print("Starting test of Logstash Syslog Server to Elasticsearch setup...", Colors.YELLOW)
     print(f"Using log type: {log_type}")
     print(f"LogsDB mode: {use_logsdb}")
     print(f"Drop event.original: {drop_event_original}")
+    print(f"Drop message: {drop_message}")
     
     # Register cleanup handler for Ctrl+C
     def cleanup_handler(sig, frame):
@@ -334,14 +311,16 @@ def main():
     # Append log type to namespace
     namespace = f"{base_namespace}-{log_type}"
 
-    # Append no-original to namespace if dropping event.original
+    # Append optimization flags to namespace
     if drop_event_original:
         namespace = f"{namespace}-no-original"
+    if drop_message:
+        namespace = f"{namespace}-no-msg"
 
     colored_print(f"Using namespace: {namespace}", Colors.GREEN)
     
-    # Update .env file with namespace, log type, and drop_event_original setting
-    update_env_file_with_options(namespace, log_type, drop_event_original)
+    # Update .env file with namespace, log type, and field dropping settings
+    update_env_file_with_options(namespace, log_type, drop_event_original, drop_message)
     
     # Load environment variables from .env file
     print("Loading environment variables from .env file...")
@@ -401,12 +380,13 @@ def main():
     print(f"Setting up Elasticsearch data stream with namespace {namespace}...")
     logsdb_arg = "--logsdb" if use_logsdb else ""
     drop_original_arg = "--drop-event-original" if drop_event_original else ""
+    # No drop-message argument needed for setup_datastream.py as it only affects Logstash pipeline
 
     # Debug environment variables
     if args.debug:
         print("\nDebug: Environment Variables for Data Stream Setup:")
         for key, value in os.environ.items():
-            if key.startswith('ES_') or key == 'ELASTIC_ADMIN_API_KEY' or key == 'DROP_EVENT_ORIGINAL':
+            if key.startswith('ES_') or key.startswith('DROP_') or key == 'ELASTIC_ADMIN_API_KEY':
                 if 'KEY' in key:
                     print(f"  {key}=******")
                 else:
@@ -434,6 +414,8 @@ def main():
     # Export environment variables for docker-compose
     os.environ["LOG_TYPE"] = log_type
     os.environ["ES_DATA_STREAM_NAMESPACE"] = namespace
+    os.environ["DROP_EVENT_ORIGINAL"] = "true" if drop_event_original else "false"
+    os.environ["DROP_MESSAGE"] = "true" if drop_message else "false"
     
     # Start the containers
     print("Starting Docker containers...")
@@ -485,7 +467,9 @@ def main():
     print(f"│ Data stream:            {data_stream}")
     print(f"│ Using LogsDB mode:      {use_logsdb}")
     print(f"│ Log Type:               {log_type}")
-    print(f"│ Namespace:              {namespace} (includes log type)")
+    print(f"│ Drop event.original:    {drop_event_original}")
+    print(f"│ Drop message:           {drop_message}")
+    print(f"│ Namespace:              {namespace} (includes options)")
     print("└─────────────────────────────────────────────────────────────────┘")
     print("")
     
@@ -519,7 +503,7 @@ def main():
         test_result = "FAILED"
     
     # Generate a test report
-    create_test_report(data_stream, use_logsdb, log_type, final_count, drop_event_original, test_result)
+    create_test_report(data_stream, use_logsdb, log_type, final_count, drop_event_original, drop_message, test_result)
     
     # Cleanup if not disabled
     if not args.no_cleanup:

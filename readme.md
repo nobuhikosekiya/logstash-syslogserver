@@ -339,3 +339,189 @@ Examples:
 - `logs-syslog-logsdb-apache-no-original`: LogsDB mode with Apache logs and no event.original field
 
 This naming convention makes it easy to identify the storage optimization settings used for each data stream.
+
+## Storage Optimization Options
+
+This system offers several ways to optimize log storage in Elasticsearch:
+
+### 1. LogsDB Mode
+
+For optimized log storage in Elasticsearch, you can enable LogsDB mode:
+
+```bash
+python test_syslog_server.py --log-type linux --logsdb
+```
+
+This configures Elasticsearch indices with LogsDB-specific settings that optimize storage and query performance for logs.
+
+### 2. Field Optimization Options
+
+The system provides field-level optimizations to further reduce storage requirements:
+
+#### Option A: Drop event.original field
+
+To reduce storage requirements, you can configure Logstash to drop the `event.original` field:
+
+```bash
+python test_syslog_server.py --drop-event-original
+```
+
+The `event.original` field typically contains a copy of the original raw message, which can significantly increase storage requirements.
+
+#### Option B: Drop message field
+
+For maximum storage savings, you can also configure Logstash to drop the `message` field entirely:
+
+```bash
+python test_syslog_server.py --drop-message
+```
+
+This option will save considerable space but means you won't have access to the message content. This is only recommended when the important data has already been extracted to structured fields.
+
+### Combined Optimizations
+
+You can combine all optimizations for maximum storage efficiency:
+
+```bash
+python test_syslog_server.py --log-type linux --logsdb --drop-event-original --drop-message
+```
+
+### Environment Variables
+
+You can also set these options directly in your `.env` file:
+
+```
+# Enable LogsDB mode
+ES_DATA_STREAM_NAMESPACE=logsdb
+
+# Drop fields for storage optimization
+DROP_EVENT_ORIGINAL=true
+DROP_MESSAGE=true
+```
+
+### Storage Comparison
+
+Based on typical usage patterns, you can expect approximately these storage savings:
+
+| Optimization | Approximate Storage Savings |
+|--------------|----------------------------|
+| Default (no optimizations) | Baseline |
+| LogsDB mode | 20-40% savings |
+| Drop event.original | 30-50% savings |
+| Drop message | 20-40% savings |
+| All combined | 60-80% savings |
+
+Actual savings will vary based on your specific log data.
+
+### Data Stream Naming Conventions
+
+The system uses a predictable naming convention for data streams to make it easy to identify the configuration:
+
+```
+logs-syslog-{base_namespace}-{log_type}[-no-original][-no-message]
+```
+
+Where:
+- **base_namespace**: Either "default" or "logsdb" depending on whether LogsDB mode is enabled
+- **log_type**: The type of logs being processed (windows, linux, mac, ssh, apache, all)
+- **-no-original**: Appended when event.original field is dropped
+- **-no-message**: Appended when message field is dropped
+
+Examples:
+- `logs-syslog-default-linux`: Standard configuration with Linux logs
+- `logs-syslog-logsdb-windows-no-message`: LogsDB mode with Windows logs, message field dropped
+- `logs-syslog-default-all-no-original-no-message`: All log types with both fields dropped
+- `logs-syslog-logsdb-apache-no-original`: LogsDB mode with Apache logs and no event.original field
+
+## Storage Optimization Options
+
+This system offers several ways to optimize log storage in Elasticsearch:
+
+### 1. LogsDB Mode
+
+For optimized log storage in Elasticsearch, you can enable LogsDB mode:
+
+```bash
+python test_syslog_server.py --log-type linux --logsdb
+```
+
+This configures Elasticsearch indices with LogsDB-specific settings that optimize storage and query performance for logs.
+
+### 2. Field Optimization Options
+
+The system provides field-level optimizations to further reduce storage requirements:
+
+#### Option A: Drop event.original field
+
+To reduce storage requirements, you can configure Logstash to drop the `event.original` field:
+
+```bash
+python test_syslog_server.py --drop-event-original
+```
+
+The `event.original` field typically contains a copy of the original raw message, which can significantly increase storage requirements.
+
+#### Option B: Drop message field
+
+For maximum storage savings, you can also configure Logstash to drop the `message` field entirely:
+
+```bash
+python test_syslog_server.py --drop-message
+```
+
+This option will save considerable space but means you won't have access to the message content. This is only recommended when the important data has already been extracted to structured fields.
+
+### Combined Optimizations
+
+You can combine all optimizations for maximum storage efficiency:
+
+```bash
+python test_syslog_server.py --log-type linux --logsdb --drop-event-original --drop-message
+```
+
+### Environment Variables
+
+You can also set these options directly in your `.env` file:
+
+```
+# Enable LogsDB mode
+ES_DATA_STREAM_NAMESPACE=logsdb
+
+# Drop fields for storage optimization
+DROP_EVENT_ORIGINAL=true
+DROP_MESSAGE=true
+```
+
+### Storage Comparison
+
+Based on typical usage patterns, you can expect approximately these storage savings:
+
+| Optimization | Approximate Storage Savings |
+|--------------|----------------------------|
+| Default (no optimizations) | Baseline |
+| LogsDB mode | 20-40% savings |
+| Drop event.original | 30-50% savings |
+| Drop message | 20-40% savings |
+| All combined | 60-80% savings |
+
+Actual savings will vary based on your specific log data.
+
+### Data Stream Naming Conventions
+
+The system uses a predictable naming convention for data streams to make it easy to identify the configuration:
+
+```
+logs-syslog-{base_namespace}-{log_type}[-no-original][-no-msg]
+```
+
+Where:
+- **base_namespace**: Either "default" or "logsdb" depending on whether LogsDB mode is enabled
+- **log_type**: The type of logs being processed (windows, linux, mac, ssh, apache, all)
+- **-no-original**: Appended when event.original field is dropped
+- **-no-message**: Appended when message field is dropped
+
+Examples:
+- `logs-syslog-default-linux`: Standard configuration with Linux logs
+- `logs-syslog-logsdb-windows-no-message`: LogsDB mode with Windows logs, message field dropped
+- `logs-syslog-default-all-no-original-no-message`: All log types with both fields dropped
+- `logs-syslog-logsdb-apache-no-original`: LogsDB mode with Apache logs and no event.original field
