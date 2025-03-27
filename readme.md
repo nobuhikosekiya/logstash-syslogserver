@@ -1,4 +1,12 @@
-# Logstash Syslog Server with Elasticsearch Data Stream Integration
+### LogsDB Mode
+
+For optimized log storage in Elasticsearch, you can enable LogsDB mode:
+
+```bash
+python test_syslog_server.py --log-type linux --logsdb
+```
+
+This configures Elasticsearch indices with LogsDB-specific settings that optimize storage and query performance for logs.# Logstash Syslog Server with Elasticsearch Data Stream Integration
 
 This project sets up a complete system to:
 1. Run Logstash as a syslog server (listening on TCP and UDP port 5514)
@@ -59,9 +67,57 @@ This project sets up a complete system to:
    python test_count_logs.py --watch
    ```
 
-## Configuration Details
+## Using the Test Script
 
-### Environment Variables
+The quickest way to test the entire setup is to use the provided test script:
+
+```bash
+python test_syslog_server.py --log-type linux --logsdb
+```
+
+This will:
+- Set up everything automatically
+- Configure Elasticsearch with the appropriate data stream
+- Process Linux logs specifically (options: windows, linux, mac, all)
+- Use LogsDB mode for Elasticsearch (optional)
+- Monitor log ingestion until all logs are successfully ingested
+- Automatically stop when all logs have been indexed
+
+The test script includes automatic verification that all logs have been properly ingested before finishing.
+
+## Configuration Options
+
+### Log Type Selection
+
+The system supports filtering logs by type using the `--log-type` option:
+
+```bash
+# Test with Windows logs only
+python test_syslog_server.py --log-type windows
+
+# Test with Linux logs only
+python test_syslog_server.py --log-type linux
+
+# Test with Mac logs only
+python test_syslog_server.py --log-type mac
+
+# Test with all logs (default)
+python test_syslog_server.py --log-type all
+```
+
+The log type selection determines which log files are sent to Logstash, but the log counting will include all logs in the data stream regardless of type.
+
+### Additional Options
+
+```bash
+# Skip cleanup after test (for debugging)
+python test_syslog_server.py --no-cleanup
+
+# Enable additional debug output
+python test_syslog_server.py --debug
+```
+
+## Environment Variables
 
 Edit the `.env` file to configure the system:
 
@@ -78,176 +134,38 @@ LOG_SEND_INTERVAL=0.01
 PROTOCOL=tcp
 LOOP_LOGS=false
 KEEP_RUNNING=false
+LOG_TYPE=all
 ```
 
-#### Important Notes on Environment Variables
+## Customizing Logstash Pipeline
 
-- Docker Compose will automatically load variables from the `.env` file when in the same directory
-- To ensure proper loading, always use `docker-compose --env-file .env` when running manually
-- The `ELASTIC_LOGSTASH_API_KEY` is used by Logstash to write to Elasticsearch
-- The `ELASTIC_ADMIN_API_KEY` is used by setup scripts to manage index templates and data streams
-- Both API keys should have appropriate permissions in Elasticsearch:
-  - `ELASTIC_LOGSTASH_API_KEY`: write access to logs indices and data streams
-  - `ELASTIC_ADMIN_API_KEY`: manage index templates and data streams
+The Logstash pipeline is defined in `logstash/pipeline/syslog-server.conf`. You can modify this file to customize how logs are processed before being sent to Elasticsearch.
 
+## Monitoring Log Ingestion
 
-### Customizing Logstash Pipeline
-
-The Logstash pipeline is defined in `logstash/pipeline/syslog.conf`. You can modify this file to customize how logs are processed before being sent to Elasticsearch.
-
-### Data Stream Configuration
-
-The data stream is set up using the `setup_datastream.py` script. By default, it creates a data stream with:
-- Type: `logs`
-- Dataset: `syslog`
-- Namespace: `default`
-
-The resulting data stream name is `logs-syslog-default`.
-
-You can customize these values:
-```bash
-python setup_datastream.py --namespace production
-```
-
-### LogsDB Mode
-
-This setup supports Elasticsearch's LogsDB mode, which is optimized for logs storage. To enable LogsDB mode:
+You can use the `test_count_logs.py` script to monitor log ingestion:
 
 ```bash
-python setup_datastream.py --logsdb
-```
-
-When LogsDB mode is enabled, the namespace is automatically set to `logsdb` and the index settings are configured with:
-```json
-"index": {
-    "mode": "logsdb",
-    "codec": "best_compression"
-}
-```
-
-Without LogsDB mode, the index settings still use best compression:
-```json
-"index": {
-    "codec": "best_compression"
-}
-```
-
-## Testing
-
-You can test the system by monitoring log ingestion using the provided test scripts:
-
-```bash
-# Basic count
+# Basic count of all logs in the data stream
 python test_count_logs.py
 
-# Watch mode (updates every 5 seconds)
-python test_count_logs.py --watch
+# Watch mode with automatic stopping
+python test_count_logs.py --watch --auto-stop
 
-# Count logs from last hour only
-python test_count_logs.py --minutes 60
+# Watch with custom interval and timeout
+python test_count_logs.py --watch --auto-stop --interval 2 --timeout 600
 
-# Use custom namespace
-python test_count_logs.py --namespace production
+# List all available data streams
+python test_count_logs.py --list-streams
 ```
 
-## Using the Test Script
+The `--auto-stop` feature will:
+1. Count the log lines in source files to determine the expected count
+2. Monitor log ingestion in real-time
+3. Automatically stop when the log count matches the expected number
+4. Timeout after a specified duration (default: 300 seconds)
 
-The `test_syslog_server.sh` script provides an automated way to test the entire pipeline from Logstash syslog ingestion to Elasticsearch data storage. It handles setup, running containers, and verification of log ingestion.
-
-### Prerequisites for Testing
-
-- Ensure your `.env` file is properly configured with Elasticsearch credentials
-- Make sure Docker and Docker Compose are running
-- Set executable permissions: `chmod +x test_syslog_server.sh`
-
-### Running the Test
-
-1. **Standard Mode**:
-   ```bash
-   ./test_syslog_server.sh
-   ```
-   This will:
-   - Run setup and create required directories
-   - Configure the data stream with namespace "default"
-   - Start Logstash and log-sender containers
-   - Monitor log ingestion for 5 minutes
-   - Generate a test report in test_report.md
-
-2. **LogsDB Mode**:
-   ```bash
-   ./test_syslog_server.sh --logsdb
-   ```
-   This adds LogsDB mode optimization to Elasticsearch indices:
-   - Sets namespace to "logsdb"
-   - Configures index settings for LogsDB mode
-   - All other test steps remain the same
-
-### Test Results
-
-The script will:
-- Display real-time log count updates
-- Show a final success/failure message
-- Generate a detailed test report in `test_report.md`
-- Clean up containers after test completion
-
-### Troubleshooting Failed Tests
-
-If the test fails:
-1. Check the test_report.md for error details
-2. Verify Elasticsearch connection settings in .env
-3. Ensure Logstash has proper permissions to write to Elasticsearch
-4. Check Docker logs: `docker-compose logs logstash`
-5. Verify network connectivity to Elasticsearch
-
-### Running Multiple Tests
-
-If you want to test different configurations sequentially:
-```bash
-# Test standard mode first
-./test_syslog_server.sh
-
-# Then test LogsDB mode
-./test_syslog_server.sh --logsdb
-
-# Compare the test reports
-diff test_report.md test_report_logsdb.md  # Will need to rename reports between tests
-```
-
-
-## Log Sender Configuration
-
-The log sender container has several configurable options through environment variables in the .env file:
-
-- `DOWNLOAD_LOGS`: Whether to download sample logs (true/false)
-- `LOG_SEND_INTERVAL`: Delay between sending log entries (seconds)
-- `PROTOCOL`: Syslog protocol to use (tcp/udp)
-- `LOOP_LOGS`: Continuously loop through logs (true/false)
-- `KEEP_RUNNING`: Keep container running after sending logs (true/false)
-
-## Directory Structure
-
-```
-.
-├── docker-compose.yml               # Docker Compose configuration
-├── .env                             # Environment variables (created from .env.example)
-├── .env.example                     # Example environment variables
-├── logstash/                        # Logstash configuration
-│   ├── config/                      # Logstash main configuration
-│   │   └── logstash.yml             # Logstash settings
-│   └── pipeline/                    # Logstash pipeline configurations
-│       └── syslog.conf              # Syslog server configuration
-├── log-sender/                      # Log sender container files
-│   ├── Dockerfile                   # Container definition
-│   ├── download_logs.py             # Script to download sample logs
-│   ├── send_logs.py                 # Script to send logs to syslog server
-│   ├── entrypoint.sh                # Container entrypoint script
-│   └── requirements.txt             # Python dependencies
-├── logs/                            # Directory for log files
-├── setup_datastream.py              # Script to set up Elasticsearch data stream
-├── test_count_logs.py               # Script to test log ingestion
-├── setup.sh                         # Setup script
-└── README.md                        # This file
-```
+This is particularly useful in automated testing scenarios where you want to verify that all logs have been correctly ingested into Elasticsearch.
 
 ## Troubleshooting
 
@@ -274,19 +192,11 @@ If you're having trouble with the data stream:
 
 ```bash
 # Delete and recreate it
-python setup_datastream.py --type logs --dataset syslog --namespace default
+python setup_datastream.py --namespace default-linux
 
 # Check if it exists
-python test_count_logs.py
+python test_count_logs.py --list-streams
 ```
-
-## Using Your Own Log Files
-
-To use your own log files instead of downloading sample logs:
-
-1. Set `DOWNLOAD_LOGS=false` in `.env`
-2. Place your log files in the `logs/` directory (ensure they end with `.log`)
-3. Restart the log-sender container: `docker-compose restart log-sender`
 
 ## Security Considerations
 

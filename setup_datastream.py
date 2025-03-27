@@ -16,6 +16,15 @@ def load_env_variables():
     if not es_endpoint or not api_key:
         raise ValueError("ES_ENDPOINT and ELASTIC_ADMIN_API_KEY must be set in the .env file")
     
+    # Clean up the ES_ENDPOINT to ensure it's properly formatted
+    if es_endpoint.endswith('/'):
+        es_endpoint = es_endpoint[:-1]  # Remove trailing slash if present
+    
+    # Ensure ES_ENDPOINT has a scheme
+    if not (es_endpoint.startswith('http://') or es_endpoint.startswith('https://')):
+        es_endpoint = 'https://' + es_endpoint
+        print(f"Added https:// to ES_ENDPOINT: {es_endpoint}")
+    
     # Set default port based on protocol if ES_PORT is not provided
     es_port = os.environ.get('ES_PORT')
     if not es_port:
@@ -26,23 +35,53 @@ def load_env_variables():
             es_port = '9200'
             print("ES_PORT not set, defaulting to 9200 for HTTP")
     
-    # Return full endpoint with port
-    return f"{es_endpoint}:{es_port}", api_key
+    # Check if endpoint already contains port
+    import re
+    port_in_url = re.search(r':\d+($|/)', es_endpoint)
+    
+    # Return full endpoint with port if not already included
+    if not port_in_url:
+        # Add the port to the URL
+        host_part = es_endpoint.split('://', 1)[1].split('/', 1)[0]
+        scheme = es_endpoint.split('://', 1)[0]
+        path = ''
+        if '/' in es_endpoint.split('://', 1)[1]:
+            path = '/' + es_endpoint.split('://', 1)[1].split('/', 1)[1]
+        
+        full_url = f"{scheme}://{host_part}:{es_port}{path}"
+        print(f"Constructed Elasticsearch URL: {full_url}")
+        return full_url, api_key
+    else:
+        # Port is already in the URL
+        print(f"Using Elasticsearch URL as provided: {es_endpoint}")
+        return es_endpoint, api_key
 
 def create_es_client(es_endpoint, api_key):
     """Create an Elasticsearch client"""
-    client = Elasticsearch(
-        es_endpoint,
-        api_key=api_key,
-        verify_certs=True
-    )
-    
-    # Check if connection was successful
-    if not client.ping():
-        raise ConnectionError("Could not connect to Elasticsearch. Please check your credentials.")
-    
-    print(f"Successfully connected to Elasticsearch: {es_endpoint}")
-    return client
+    try:
+        print(f"Attempting to connect to Elasticsearch at: {es_endpoint}")
+        
+        # Check if the URL format is valid
+        import re
+        if not re.match(r'^https?://[^:]+:\d+', es_endpoint):
+            raise ValueError(f"Invalid Elasticsearch URL format: {es_endpoint}. URL must include a 'scheme', 'host', and 'port' component (ie 'https://localhost:9200')")
+        
+        client = Elasticsearch(
+            es_endpoint,
+            api_key=api_key,
+            verify_certs=True,
+            timeout=30
+        )
+        
+        # Check if connection was successful
+        if not client.ping():
+            raise ConnectionError("Could not connect to Elasticsearch. Please check your credentials and endpoint.")
+        
+        print(f"Successfully connected to Elasticsearch: {es_endpoint}")
+        return client
+    except Exception as e:
+        print(f"Error creating Elasticsearch client: {str(e)}")
+        raise
 
 def check_datastream_exists(client, data_stream_name):
     """Check if a data stream already exists"""
@@ -107,7 +146,32 @@ def create_index_template(client, template_name, index_pattern, logsdb_mode=Fals
                             "name": {"type": "keyword"}
                         }
                     },
-                    "message": {"type": "text"}
+                    "message": {"type": "text"},
+                    "log_type": {"type": "keyword"},
+                    "log": {
+                        "properties": {
+                            "syslog": {
+                                "properties": {
+                                    "facility": {
+                                        "properties": {
+                                            "name": {"type": "keyword"}
+                                        }
+                                    },
+                                    "severity": {
+                                        "properties": {
+                                            "name": {"type": "keyword"}
+                                        }
+                                    },
+                                    "priority": {"type": "long"}
+                                }
+                            }
+                        }
+                    },
+                    "source": {
+                        "properties": {
+                            "ip": {"type": "ip"}
+                        }
+                    }
                 }
             }
         }
@@ -132,25 +196,42 @@ def main():
     parser.add_argument('--es-endpoint', dest='es_endpoint', help='Elasticsearch endpoint (overrides .env)', default=None)
     parser.add_argument('--api-key', dest='api_key', help='Elasticsearch API Key (overrides .env)', default=None)
     parser.add_argument('--logsdb', dest='logsdb_mode', action='store_true', help='Enable logsdb mode in index settings')
+    parser.add_argument('--debug', action='store_true', help='Enable debug output')
     
     args = parser.parse_args()
     
     try:
         # Try to load from .env first
+        if args.debug:
+            print("Debug mode enabled")
+            print("Loading environment variables from .env file...")
+            
         es_endpoint, api_key = load_env_variables()
+        
+        if args.debug:
+            print(f"ES_ENDPOINT from environment: {es_endpoint}")
+            print(f"API_KEY from environment: {'*' * 8} (masked)")
         
         # Override with command line if provided
         if args.es_endpoint:
             es_endpoint = args.es_endpoint
+            if args.debug:
+                print(f"Overriding ES_ENDPOINT with command line value: {es_endpoint}")
         if args.api_key:
             api_key = args.api_key
+            if args.debug:
+                print("Overriding API_KEY with command line value (masked)")
         
         # Create Elasticsearch client
         client = create_es_client(es_endpoint, api_key)
         
         # Construct the data stream name (format: {type}-{dataset}-{namespace})
         data_stream_name = f"{args.type}-{args.dataset}-{args.namespace}"
+        
+        # Use a wildcard pattern for the template to match any namespace
         template_name = f"{args.type}-{args.dataset}-template"
+        
+        # Use wildcard pattern for the index template to match any namespace
         index_pattern = f"{args.type}-{args.dataset}-*"
         
         print(f"Setting up data stream: {data_stream_name}")
@@ -169,9 +250,12 @@ def main():
         
         print("Setup completed successfully!")
         print("The data stream will be created automatically when Logstash ingests the first log entry.")
+        print(f"Data stream name: {data_stream_name}")
         
     except Exception as e:
         print(f"Error: {str(e)}")
+        import traceback
+        traceback.print_exc()
         sys.exit(1)
 
 if __name__ == "__main__":

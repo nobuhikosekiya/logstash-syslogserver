@@ -11,7 +11,9 @@ import argparse
 LOG_FILES = {
     "windows": "https://zenodo.org/records/8196385/files/Windows.tar.gz?download=1",
     "linux": "https://zenodo.org/records/8196385/files/Linux.tar.gz?download=1",
-    "mac": "https://zenodo.org/records/8196385/files/Mac.tar.gz?download=1"
+    "mac": "https://zenodo.org/records/8196385/files/Mac.tar.gz?download=1",
+    "openssh": "https://zenodo.org/records/8196385/files/SSH.tar.gz?download=1",
+    "apache": "https://zenodo.org/records/8196385/files/Apache.tar.gz?download=1"
 }
 
 def download_file(url, output_dir):
@@ -80,8 +82,8 @@ def extract_tarfile(file_path, output_dir):
 
 def main():
     parser = argparse.ArgumentParser(description='Download and extract log files')
-    parser.add_argument('--log-type', dest='log_type', choices=['windows', 'linux', 'mac', 'all'],
-                      help='Type of log to download (windows, linux, mac, or all)', default='all')
+    parser.add_argument('--log-type', dest='log_type', choices=['windows', 'linux', 'mac', 'openssh', 'apache', 'all'], 
+                      help='Type of log to download (windows, linux, mac, openssh, apache or all)', default='all')
     parser.add_argument('--output-dir', dest='output_dir', help='Output directory',
                       default="/logs")
     
