@@ -31,7 +31,7 @@ def format_syslog_message(line, host=None):
     """
     Format message in syslog format if it isn't already
     """
-    # Check if line is empty
+    # Check if line already has a timestamp at the beginning
     if line.strip() == '':
         return None
         
@@ -61,67 +61,6 @@ def send_log(sock, logstash_host, logstash_port, line, protocol='tcp'):
         logger.error(f"Error sending log: {e}")
         return False
 
-def find_log_files(log_dir, log_type):
-    """Find log files based on log type"""
-    log_files = []
-    log_type_lower = log_type.lower()
-    
-    logger.info(f"Looking for log files of type '{log_type}' in {log_dir}")
-    
-    if log_type_lower == 'all':
-        # Get all log files
-        log_files = glob.glob(f"{log_dir}/**/*.log", recursive=True)
-        log_files.extend(glob.glob(f"{log_dir}/*.log"))
-        logger.info(f"Found {len(log_files)} log files for all types")
-    else:
-        # Look for the specific type's directory
-        type_dir = os.path.join(log_dir, log_type.capitalize())
-        if os.path.exists(type_dir):
-            logger.info(f"Found directory for {log_type}: {type_dir}")
-            log_files.extend(glob.glob(f"{type_dir}/**/*.log", recursive=True))
-        
-        # Look for files with the log type in their name
-        main_log_file = os.path.join(log_dir, f"{log_type}.log")
-        main_log_file_cap = os.path.join(log_dir, f"{log_type.capitalize()}.log")
-        
-        if os.path.exists(main_log_file):
-            logger.info(f"Found main log file: {main_log_file}")
-            log_files.append(main_log_file)
-        
-        if os.path.exists(main_log_file_cap) and main_log_file_cap != main_log_file:
-            logger.info(f"Found capitalized log file: {main_log_file_cap}")
-            log_files.append(main_log_file_cap)
-        
-        # Search for files that start with the log type
-        for log_file in glob.glob(f"{log_dir}/*.log"):
-            file_basename = os.path.basename(log_file).lower()
-            if file_basename.startswith(log_type_lower) and log_file not in log_files:
-                logger.info(f"Found matching log file: {log_file}")
-                log_files.append(log_file)
-        
-        # Search subdirectories too
-        for log_file in glob.glob(f"{log_dir}/**/*.log", recursive=True):
-            file_basename = os.path.basename(log_file).lower()
-            if file_basename.startswith(log_type_lower) and log_file not in log_files:
-                logger.info(f"Found matching log file in subdirectory: {log_file}")
-                log_files.append(log_file)
-    
-    # Remove duplicates while preserving order
-    unique_files = []
-    for file_path in log_files:
-        if file_path not in unique_files:
-            unique_files.append(file_path)
-    
-    # Log what we found
-    if not unique_files:
-        logger.warning(f"No log files found for type '{log_type}'")
-    else:
-        logger.info(f"Found {len(unique_files)} unique log files for type '{log_type}':")
-        for log_file in unique_files:
-            logger.info(f"  - {log_file}")
-    
-    return unique_files
-
 def main():
     parser = argparse.ArgumentParser(description='Send log files to syslog server')
     parser.add_argument('--host', dest='host', help='Logstash host', 
@@ -135,28 +74,11 @@ def main():
     parser.add_argument('--protocol', dest='protocol', help='Protocol (tcp or udp)', 
                         default=os.environ.get('PROTOCOL', 'tcp'))
     parser.add_argument('--loop', dest='loop', action='store_true', help='Loop through logs continuously')
-    parser.add_argument('--log-type', dest='log_type', help='Log type to filter (windows, linux, mac, all)', 
+    parser.add_argument('--log-type', dest='log_type', help='Type of logs to send (linux, mac, windows, all)', 
                         default=os.environ.get('LOG_TYPE', 'all'))
-    parser.add_argument('--delete-after-send', dest='delete_after_send', action='store_true',
-                        help='Delete log files after sending', default=False)
-    parser.add_argument('--keep-logs', dest='keep_logs', action='store_true',
-                        help='Keep log files after sending (overrides delete-after-send)', default=True)
+    parser.add_argument('--keep-logs', dest='keep_logs', action='store_true', help='Keep log files after processing')
     
     args = parser.parse_args()
-    
-    # Display starting configuration
-    logger.info("=== Log Sender Configuration ===")
-    logger.info(f"Logstash Host: {args.host}")
-    logger.info(f"Logstash Port: {args.port}")
-    logger.info(f"Log Directory: {args.log_dir}")
-    logger.info(f"Log Type: {args.log_type}")
-    logger.info(f"Protocol: {args.protocol}")
-    logger.info(f"Interval: {args.interval} seconds")
-    logger.info(f"Loop Mode: {args.loop}")
-    logger.info(f"Delete After Send: {args.delete_after_send and not args.keep_logs}")
-    
-    # Determine whether to delete logs after sending
-    delete_after_send = args.delete_after_send and not args.keep_logs
     
     # Create socket based on protocol
     if args.protocol.lower() == 'tcp':
@@ -171,15 +93,63 @@ def main():
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         logger.info(f"Created UDP socket for syslog server at {args.host}:{args.port}")
     
-    # Find log files for the specified type
-    log_files = find_log_files(args.log_dir, args.log_type)
-    
+    # Find all log files
+    log_files = glob.glob(f"{args.log_dir}/**/*.log", recursive=True)
     if not log_files:
-        logger.error(f"No log files found for type '{args.log_type}' in {args.log_dir}")
+        logger.error(f"No log files found in {args.log_dir}")
         sys.exit(1)
     
-    # Track files that have been processed and can be deleted
-    processed_files = []
+    # Filter log files based on log_type if specified
+    filtered_log_files = []
+    if args.log_type and args.log_type.lower() != 'all':
+        # Case-insensitive filtering
+        log_type_lower = args.log_type.lower()
+        
+        # Group files by lowercase basename to detect duplicates
+        log_file_groups = {}
+        for log_file in log_files:
+            filename = os.path.basename(log_file)
+            basename_lower = os.path.splitext(filename)[0].lower()
+            
+            # Only consider files matching the requested log type
+            if basename_lower == log_type_lower:
+                if basename_lower not in log_file_groups:
+                    log_file_groups[basename_lower] = []
+                log_file_groups[basename_lower].append(log_file)
+        
+        # For each group of duplicate files, take only the first one
+        for basename, file_list in log_file_groups.items():
+            if file_list:
+                filtered_log_files.append(file_list[0])
+                if len(file_list) > 1:
+                    logger.info(f"Found {len(file_list)} files with basename '{basename}', using only: {file_list[0]}")
+    else:
+        # If no specific log type, use all log files but deduplicate
+        log_file_groups = {}
+        for log_file in log_files:
+            filename = os.path.basename(log_file)
+            basename_lower = os.path.splitext(filename)[0].lower()
+            
+            if basename_lower not in log_file_groups:
+                log_file_groups[basename_lower] = []
+            log_file_groups[basename_lower].append(log_file)
+        
+        for basename, file_list in log_file_groups.items():
+            if file_list:
+                filtered_log_files.append(file_list[0])
+                if len(file_list) > 1:
+                    logger.info(f"Found {len(file_list)} files with basename '{basename}', using only: {file_list[0]}")
+    
+    # Use the filtered log files
+    log_files = filtered_log_files
+    
+    logger.info(f"Found {len(log_files)} unique log files to process")
+    if args.log_type and args.log_type.lower() != 'all':
+        logger.info(f"Filtered to log type: {args.log_type}")
+    
+    # Log the selected files for debugging
+    for log_file in log_files:
+        logger.info(f"  - {log_file}")
     
     # Process each log file
     while True:
@@ -210,40 +180,11 @@ def main():
                             # Add delay if specified
                             if args.interval > 0:
                                 time.sleep(args.interval)
-                
-                # Add file to processed list for deletion
-                if delete_after_send and log_file not in processed_files:
-                    processed_files.append(log_file)
             
             except Exception as e:
                 logger.error(f"Error processing {log_file}: {e}")
         
         logger.info(f"Sent {total_sent} of {total_lines} log lines to syslog server")
-        
-        # Delete processed files if requested
-        if delete_after_send and processed_files:
-            logger.info(f"Deleting {len(processed_files)} processed log files")
-            for file_path in processed_files:
-                try:
-                    # Check if the file still exists (may be deleted in a previous loop)
-                    if os.path.exists(file_path):
-                        os.remove(file_path)
-                        logger.info(f"Deleted {file_path}")
-                except Exception as e:
-                    logger.error(f"Error deleting {file_path}: {e}")
-            
-            # Empty the processed files list
-            processed_files = []
-            
-            # Update the list of log files (remove deleted files)
-            if args.loop:
-                log_files = [f for f in log_files if os.path.exists(f)]
-                logger.info(f"Updated log file list: {len(log_files)} files remaining")
-                
-                # Exit if no log files remain
-                if not log_files:
-                    logger.info("No log files remaining. Exiting.")
-                    break
         
         if not args.loop:
             break
