@@ -1,132 +1,261 @@
-### LogsDB Mode
+# Logstash Syslog Server with Elasticsearch Data Stream Integration
 
-For optimized log storage in Elasticsearch, you can enable LogsDB mode:
+## Architecture Overview
 
-```bash
-python test_syslog_server.py --log-type linux --logsdb
+```
+┌─────────────┐     ┌─────────────┐     ┌────────────────┐     ┌─────────────────┐
+│  Log Source │     │ Log Sender  │     │    Logstash    │     │  Elasticsearch  │
+│  (External) │────>│ (Container) │────>│   (Container)  │────>│  (External/Cloud│
+└─────────────┘     └─────────────┘     └────────────────┘     │     Service)    │
+                         │                      │               └─────────────────┘
+                         │                      │                        ▲
+                         │                      │                        │
+                    ┌────▼──────┐         ┌─────▼────┐              ┌───┴────┐
+                    │   logs/   │         │ logstash/ │              │ Setup  │
+                    │ directory │         │ pipeline/ │              │ Scripts│
+                    └───────────┘         └──────────┘              └────────┘
 ```
 
-This configures Elasticsearch indices with LogsDB-specific settings that optimize storage and query performance for logs.# Logstash Syslog Server with Elasticsearch Data Stream Integration
+### Components
 
-This project sets up a complete system to:
-1. Run Logstash as a syslog server (listening on TCP and UDP port 5514)
-2. Collect and process syslog messages
-3. Store the data in Elasticsearch using data streams
-4. Include test scripts to verify data ingestion
+- **Log Source**: External systems generating logs (not part of this project)
+- **Log Sender Container**: Downloads sample logs and sends them to Logstash
+- **Logstash Container**: Receives, processes, and forwards logs
+- **Elasticsearch**: External service that stores the processed logs (prerequisite, not included)
+- **Setup Scripts**: Configure the data stream and test the system
 
-## Architecture
+### Prerequisites (Not Included in Project)
 
-- **Logstash Container**: Runs the syslog server and processes logs
-- **Log Sender Container**: Downloads sample logs and sends them to Logstash via syslog protocol
-- **Elasticsearch**: External service that stores the processed logs in a data stream
+- **Elasticsearch Deployment**: You must have an Elasticsearch instance running (self-hosted or cloud)
+- **Elasticsearch API Keys**: You need to create API keys with appropriate permissions:
+  - Logstash API Key: For indexing data
+  - Admin API Key: For managing data streams and index templates
+- **Docker and Docker Compose**: Required to run the containers
+- **Python 3.6+**: Required for setup and test scripts
 
-## Prerequisites
+This project provides a complete system for ingesting syslog data into Elasticsearch with flexible storage optimization options. It includes:
 
-- Docker and Docker Compose installed
-- Elasticsearch deployment (cloud or self-hosted) with API key access
-- Python 3.6+ (for setup scripts and testing)
+1. A Logstash server that receives syslog messages (TCP and UDP on port 5514)
+2. A log sender component that can simulate different types of log data
+3. Integration with Elasticsearch using Data Streams
+4. Comprehensive testing and configuration tools
 
 ## Quick Start
 
-1. **Clone this repository**
-   ```bash
-   git clone https://github.com/yourusername/logstash-syslog-elasticsearch.git
-   cd logstash-syslog-elasticsearch
-   ```
+### Prerequisites
 
-2. **Run the setup script**
-   ```bash
-   chmod +x setup.sh
-   ./setup.sh
-   ```
+Before you begin, ensure you have:
 
-3. **Edit your .env file**
-   ```bash
-   # Update with your Elasticsearch details
-   nano .env
-   ```
+1. **Elasticsearch Deployment**:
+   - A running Elasticsearch 8.x instance (cloud-based or self-hosted)
+   - Network connectivity from your host to Elasticsearch
+   - Sufficient privileges to create index templates and data streams
 
-4. **Set up the Elasticsearch data stream**
-   ```bash
-   source venv/bin/activate
-   python setup_datastream.py
-   ```
+2. **Elasticsearch API Keys**:
+   - Create a Logstash API key with `create_doc` permissions on `logs-*` indices
+   - Create an Admin API key with `manage_index_templates` and `manage_data_stream` permissions
 
-5. **Start the services**
-   ```bash
-   docker-compose up -d
-   ```
+3. **Local Environment**:
+   - Docker and Docker Compose installed
+   - Python 3.6+ with pip
+   - Git (to clone the repository)
+   - 500MB+ free disk space for sample logs
+   - Open port 5514 (if receiving external syslog messages)
 
-6. **Monitor the logs**
-   ```bash
-   docker-compose logs -f
-   ```
-
-7. **Verify log ingestion**
-   ```bash
-   python test_count_logs.py --watch
-   ```
-
-## Using the Test Script
-
-The quickest way to test the entire setup is to use the provided test script:
+### Installation Steps
 
 ```bash
-python test_syslog_server.py --log-type linux --logsdb
+# Clone the repository
+git clone https://github.com/yourusername/logstash-syslog-elasticsearch.git
+cd logstash-syslog-elasticsearch
+
+# Run the setup script
+chmod +x setup.sh
+./setup.sh
+
+# Edit your .env file with your Elasticsearch details
+nano .env
+# Important: Update ES_ENDPOINT, ELASTIC_LOGSTASH_API_KEY, and ELASTIC_ADMIN_API_KEY
+
+# Run the test script with default settings
+python test_syslog_server.py
 ```
 
-This will:
-- Set up everything automatically
-- Configure Elasticsearch with the appropriate data stream
-- Process Linux logs specifically (options: windows, linux, mac, all)
-- Use LogsDB mode for Elasticsearch (optional)
-- Monitor log ingestion until all logs are successfully ingested
-- Automatically stop when all logs have been indexed
+The test script will:
+1. Set up the Elasticsearch data stream
+2. Start the Docker containers
+3. Send sample logs to Logstash
+4. Verify ingestion into Elasticsearch
+5. Generate a test report
 
-The test script includes automatic verification that all logs have been properly ingested before finishing.
+## Test Script Options
 
-## Configuration Options
+The `test_syslog_server.py` script provides a comprehensive way to test and configure the system. Here's a detailed explanation of all available options:
 
-### Log Type Selection
-
-The system supports filtering logs by type using the `--log-type` option:
+### Basic Usage
 
 ```bash
-# Test with Windows logs only
-python test_syslog_server.py --log-type windows
+python test_syslog_server.py [options]
+```
 
-# Test with Linux logs only
+### Log Type Selection (--log-type)
+
+Determines which type of log files to process:
+
+```bash
 python test_syslog_server.py --log-type linux
-
-# Test with Mac logs only
-python test_syslog_server.py --log-type mac
-
-# Test with all logs (default)
-python test_syslog_server.py --log-type all
 ```
 
-The log type selection determines which log files are sent to Logstash, but the log counting will include all logs in the data stream regardless of type.
+Options:
+- `windows`: Process only Windows event logs *(Note: Currently commented out in the code due to large size - over 20GB)*
+- `linux`: Process only Linux system logs
+- `mac`: Process only macOS logs
+- `ssh`: Process only SSH authentication logs
+- `apache`: Process only Apache web server logs
+- `all`: Process all log types (default)
 
-### Additional Options
+**What it changes:**
+- Filters which log files are sent to Logstash
+- Affects the data stream namespace (adds the log type to the namespace)
+- Changes expected log count and processing time
+
+### LogsDB Mode (--logsdb)
+
+Enables LogsDB mode for optimized log storage in Elasticsearch:
 
 ```bash
-# Skip cleanup after test (for debugging)
-python test_syslog_server.py --no-cleanup
+python test_syslog_server.py --logsdb
+```
 
-# Enable additional debug output
+**What it changes:**
+- Modifies Elasticsearch index settings with LogsDB-specific optimizations
+- Changes the base namespace from "default" to "logsdb"
+- Typically reduces storage by 20-40% compared to standard mode
+- Optimizes indexing performance and search speed for log data
+- Adds specific index settings:
+  - Configures codec to use "best_compression"
+  - Sets the index mode to "logsdb"
+  - Optimizes refresh intervals and merge policies
+
+### Drop event.original Field (--drop-event-original)
+
+Removes the event.original field from indexed documents:
+
+```bash
+python test_syslog_server.py --drop-event-original
+```
+
+**What it changes:**
+- Adds a filter in Logstash to remove the event.original field before indexing
+- Adds "-no-original" to the data stream namespace
+- Typically reduces storage by 30-50% compared to keeping the field
+- Removes the raw, unprocessed log message that's normally kept for reference
+- Affects troubleshooting capabilities as the original message is no longer available
+
+### Drop message Field (--drop-msg)
+
+Removes the message field from indexed documents:
+
+```bash
+python test_syslog_server.py --drop-message
+```
+
+**What it changes:**
+- Adds a filter in Logstash to remove the message field before indexing
+- Adds "-no-msg" to the data stream namespace
+- Typically reduces storage by 20-40% compared to keeping the field
+- Removes the processed log message content
+- Affects searchability as the main message content is no longer available
+- Only use this when all important data has already been extracted to structured fields
+
+### Debug Mode (--debug)
+
+Enables additional debug output:
+
+```bash
 python test_syslog_server.py --debug
 ```
 
-## Environment Variables
+**What it changes:**
+- Increases verbosity of console output
+- Shows environment variable values (except API keys)
+- Shows commands being executed
+- Passes debug flag to dependent scripts
 
-Edit the `.env` file to configure the system:
+### Skip Cleanup (--no-cleanup)
+
+Prevents automatic cleanup after test completion:
+
+```bash
+python test_syslog_server.py --no-cleanup
+```
+
+**What it changes:**
+- Keeps Docker containers running after test completion
+- Does not restore .env file from backup
+- Useful for debugging or when you want to examine the environment after a test
+
+## Combining Options
+
+You can combine multiple options to customize your test setup. For example:
+
+```bash
+# Test with Linux logs using LogsDB mode and dropping both fields for maximum storage savings
+python test_syslog_server.py --log-type linux --logsdb --drop-event-original --drop-message
+
+# Test with Apache logs in debug mode without cleanup
+python test_syslog_server.py --log-type apache --debug --no-cleanup
+```
+
+## Data Stream Naming Convention
+
+The system uses a consistent naming pattern for data streams:
 
 ```
+logs-syslog-{base_namespace}-{log_type}[-no-original][-no-msg]
+```
+
+Where:
+- **base_namespace**: "default" or "logsdb" (if LogsDB mode is enabled)
+- **log_type**: The type of logs being processed (windows, linux, mac, ssh, apache, all)
+- **-no-original**: Added when event.original field is dropped
+- **-no-msg**: Added when message field is dropped
+
+Examples:
+- `logs-syslog-default-linux`: Standard configuration with Linux logs
+- `logs-syslog-logsdb-windows`: LogsDB mode with Windows logs
+- `logs-syslog-default-all-no-original`: All log types without event.original field
+- `logs-syslog-logsdb-apache-no-original-no-msg`: LogsDB mode with Apache logs, dropping both fields
+
+## Storage Optimization Comparison
+
+*Note: The storage savings percentages below are estimated values and not based on actual benchmarks. These are assumptions created for illustrative purposes.*
+
+| Configuration | Approximate Storage Savings | Impact on Functionality |
+|---------------|----------------------------|-------------------------|
+| Default | Baseline | Full functionality, largest storage footprint |
+| LogsDB mode | 20-40% savings | Full functionality with optimized indices |
+| Drop event.original | 30-50% savings | Lose ability to see original raw message |
+| Drop message | 20-40% savings | Lose ability to search message content |
+| All optimizations | 60-80% savings | Most space-efficient, but limited functionality |
+
+Actual storage savings will vary based on log content, volume, and specific use cases. It's recommended to test each optimization option with your specific log data to determine actual storage impacts.
+
+## Environment Variables
+
+The `.env` file controls the system configuration:
+
+```properties
 # Elasticsearch connection settings
 ES_ENDPOINT="https://your-es-endpoint.cloud.es.io"
 ES_PORT=443
 ELASTIC_LOGSTASH_API_KEY="your_logstash_api_key_here"
 ELASTIC_ADMIN_API_KEY="your_admin_api_key_here"
+ES_DATA_STREAM_NAMESPACE="default"  # Or "logsdb" for LogsDB mode
+
+# Field removal options
+DROP_EVENT_ORIGINAL=false  # Set to true to drop the event.original field
+DROP_MESSAGE=false  # Set to true to drop the message field
 
 # Log sender configuration
 DOWNLOAD_LOGS=true
@@ -137,391 +266,111 @@ KEEP_RUNNING=false
 LOG_TYPE=all
 ```
 
-## Customizing Logstash Pipeline
+The test script updates these values based on the command-line options you provide.
 
-The Logstash pipeline is defined in `logstash/pipeline/syslog-server.conf`. You can modify this file to customize how logs are processed before being sent to Elasticsearch.
+## Logstash Pipeline Details
 
-## Monitoring Log Ingestion
+The Logstash pipeline (`logstash/pipeline/syslog-server.conf`) performs these processing steps:
 
-You can use the `test_count_logs.py` script to monitor log ingestion:
+1. Receives syslog messages on port 5514 (TCP and UDP)
+2. Handles character encoding issues
+3. Extracts hostname, timestamp, and message content using Grok patterns
+4. Updates fields to follow the Elastic Common Schema (ECS)
+5. Conditionally removes fields based on configuration:
+   - Removes event.original if DROP_EVENT_ORIGINAL=true
+   - Removes message if DROP_MESSAGE=true
+6. Sends data to Elasticsearch using the configured data stream
 
-```bash
-# Basic count of all logs in the data stream
-python test_count_logs.py
+## Test Report
 
-# Watch mode with automatic stopping
-python test_count_logs.py --watch --auto-stop
+After each test run, a `test_report.md` file is generated containing:
 
-# Watch with custom interval and timeout
-python test_count_logs.py --watch --auto-stop --interval 2 --timeout 600
+- Test configuration details
+- Test results (PASSED/FAILED)
+- Log ingestion statistics
+- Container status and logs
+- Environment information
 
-# List all available data streams
-python test_count_logs.py --list-streams
-```
+This report is useful for documenting your test results and troubleshooting any issues.
 
-The `--auto-stop` feature will:
-1. Count the log lines in source files to determine the expected count
-2. Monitor log ingestion in real-time
-3. Automatically stop when the log count matches the expected number
-4. Timeout after a specified duration (default: 300 seconds)
+## Docker Components
 
-This is particularly useful in automated testing scenarios where you want to verify that all logs have been correctly ingested into Elasticsearch.
+The system consists of two Docker containers:
+
+1. **Logstash**: Runs the syslog server and processes logs
+   - Listens on TCP and UDP port 5514
+   - Processes and transforms log data
+   - Indexes data to Elasticsearch
+
+2. **Log Sender**: Simulates log sources
+   - Downloads sample logs if needed
+   - Sends logs to Logstash via syslog protocol
+   - Can be configured to send different log types
 
 ## Troubleshooting
 
-### Common Issues
+If you encounter issues, check the following:
 
-1. **No logs appearing in Elasticsearch**
+1. **No logs in Elasticsearch**
+   - Verify Elasticsearch connection details in .env
    - Check Logstash logs: `docker-compose logs logstash`
-   - Verify Elasticsearch connection details in `.env`
-   - Ensure data stream was created: `python setup_datastream.py`
+   - Test connectivity to Elasticsearch
+   - Verify API key permissions
 
-2. **Log-sender container exits immediately**
-   - Check logs: `docker-compose logs log-sender`
-   - Verify if Logstash is running and ready
-   - Set `KEEP_RUNNING=true` in `.env` to keep container running for debugging
+2. **Logstash errors**
+   - Check Logstash configuration
+   - Verify field references in pipeline
+   - Check available memory/resources
 
-3. **Logstash errors**
-   - Check Logstash logs: `docker-compose logs logstash`
-   - Verify your Elasticsearch API key has proper permissions
-   - Check SSL/TLS settings match your Elasticsearch deployment
+3. **Log sender issues**
+   - Check if sample logs were downloaded: `ls -la logs/`
+   - Verify connectivity to Logstash: `nc -v localhost 5514`
+   - Check log sender logs: `docker-compose logs log-sender`
 
-### Data Stream Issues
+Use the `--debug` flag for additional diagnostic information.
 
-If you're having trouble with the data stream:
+## Advanced Use Cases
 
-```bash
-# Delete and recreate it
-python setup_datastream.py --namespace default-linux
+### Enabling TLS/SSL for Syslog Input
 
-# Check if it exists
-python test_count_logs.py --list-streams
+For secure transmission, modify the syslog input to use SSL:
+
+```ruby
+input {
+  syslog {
+    port => 5514
+    type => "syslog"
+    ssl_enable => true
+    ssl_cert => "/usr/share/logstash/secrets/server.crt"
+    ssl_key => "/usr/share/logstash/secrets/server.key"
+    # ... other settings
+  }
+}
 ```
 
-## Security Considerations
+### Custom Fields Extraction
 
-- The `.env` file contains sensitive credentials - keep it secure and excluded from version control
-- API keys should have the minimum required permissions
-- Consider using a dedicated Elasticsearch role for Logstash with limited privileges
-- For production use, enable SSL/TLS for Logstash inputs
+Modify the Logstash pipeline to extract additional fields from your logs:
 
-## Storage Optimization Options
-
-This system offers two primary ways to optimize log storage in Elasticsearch:
-
-### 1. LogsDB Mode
-
-For optimized log storage in Elasticsearch, you can enable LogsDB mode:
-
-```bash
-python test_syslog_server.py --log-type linux --logsdb
+```ruby
+filter {
+  # Extract specific fields for your application
+  grok {
+    match => { "message" => "%{TIMESTAMP_ISO8601:timestamp} %{LOGLEVEL:log_level} \[%{DATA:service}\] %{GREEDYDATA:log_message}" }
+  }
+  
+  # ... rest of pipeline
+}
 ```
 
-This configures Elasticsearch indices with LogsDB-specific settings that optimize storage and query performance for logs.
+### Integration with Filebeat
 
-### 2. Drop event.original Field
+To use this setup with Filebeat instead of direct syslog input:
 
-To reduce storage requirements further, you can configure Logstash to drop the `event.original` field:
-
-```bash
-python test_syslog_server.py --drop-event-original
-```
-
-The `event.original` field typically contains a copy of the original raw message, which can significantly increase storage requirements. Dropping this field can lead to substantial storage savings, especially with high-volume log ingestion.
-
-You can combine both options for maximum storage efficiency:
-
-```bash
-python test_syslog_server.py --log-type linux --logsdb --drop-event-original
-```
-
-### Additional Environment Variables
-
-You can also set these options directly in your `.env` file:
-
-```
-# Enable LogsDB mode
-ES_DATA_STREAM_NAMESPACE=logsdb
-
-# Drop event.original field
-DROP_EVENT_ORIGINAL=true
-```
-
-## Storage Optimization Options
-
-This system offers several ways to optimize log storage in Elasticsearch:
-
-### 1. LogsDB Mode
-
-For optimized log storage in Elasticsearch, you can enable LogsDB mode:
-
-```bash
-python test_syslog_server.py --log-type linux --logsdb
-```
-
-This configures Elasticsearch indices with LogsDB-specific settings that optimize storage and query performance for logs.
-
-### 2. Optimizing the event.original Field
-
-The `event.original` field contains a copy of the original raw message and can significantly increase storage requirements. You have two options to optimize this:
-
-#### Option A: Change event.original to keyword type (Default)
-
-By default, the system will map `event.original` as a `keyword` type instead of `text`. This reduces storage requirements and improves query performance while keeping the original message data available.
-
-No additional configuration is needed for this option as it's the default behavior.
-
-#### Option B: Drop event.original field entirely
-
-For maximum storage savings, you can configure Logstash to drop the `event.original` field completely:
-
-```bash
-python test_syslog_server.py --drop-event-original
-```
-
-This option will save the most space but means you won't have access to the full original message.
-
-### Combined Optimizations
-
-You can combine all optimizations for maximum storage efficiency:
-
-```bash
-python test_syslog_server.py --log-type linux --logsdb --drop-event-original
-```
-
-### Environment Variables
-
-You can also set these options directly in your `.env` file:
-
-```
-# Enable LogsDB mode
-ES_DATA_STREAM_NAMESPACE=logsdb
-
-# Drop event.original field
-DROP_EVENT_ORIGINAL=true
-```
-
-### Storage Comparison
-
-Based on typical usage patterns, you can expect approximately these storage savings:
-
-| Optimization | Approximate Storage Savings |
-|--------------|----------------------------|
-| Default (text field) | Baseline |
-| Keyword mapping | 10-20% savings |
-| Drop event.original | 30-50% savings |
-| LogsDB mode | 20-40% savings |
-| All combined | 50-70% savings |
-
-Actual savings will vary based on your specific log data.
+1. Configure Logstash to listen for Filebeat input
+2. Configure Filebeat to forward to Logstash
+3. Use the same storage optimization options
 
 ## License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
-
-## Data Stream Naming Conventions
-
-The system uses a predictable naming convention for data streams to make it easy to identify the configuration:
-
-```
-logs-syslog-{base_namespace}-{log_type}[-no-original]
-```
-
-Where:
-- **base_namespace**: Either "default" or "logsdb" depending on whether LogsDB mode is enabled
-- **log_type**: The type of logs being processed (windows, linux, mac, ssh, apache, all)
-- **-no-original**: Appended when event.original field is dropped
-
-Examples:
-- `logs-syslog-default-linux`: Standard configuration with Linux logs
-- `logs-syslog-logsdb-windows`: LogsDB mode with Windows logs
-- `logs-syslog-default-all-no-original`: All log types without event.original field
-- `logs-syslog-logsdb-apache-no-original`: LogsDB mode with Apache logs and no event.original field
-
-This naming convention makes it easy to identify the storage optimization settings used for each data stream.
-
-## Storage Optimization Options
-
-This system offers several ways to optimize log storage in Elasticsearch:
-
-### 1. LogsDB Mode
-
-For optimized log storage in Elasticsearch, you can enable LogsDB mode:
-
-```bash
-python test_syslog_server.py --log-type linux --logsdb
-```
-
-This configures Elasticsearch indices with LogsDB-specific settings that optimize storage and query performance for logs.
-
-### 2. Field Optimization Options
-
-The system provides field-level optimizations to further reduce storage requirements:
-
-#### Option A: Drop event.original field
-
-To reduce storage requirements, you can configure Logstash to drop the `event.original` field:
-
-```bash
-python test_syslog_server.py --drop-event-original
-```
-
-The `event.original` field typically contains a copy of the original raw message, which can significantly increase storage requirements.
-
-#### Option B: Drop message field
-
-For maximum storage savings, you can also configure Logstash to drop the `message` field entirely:
-
-```bash
-python test_syslog_server.py --drop-message
-```
-
-This option will save considerable space but means you won't have access to the message content. This is only recommended when the important data has already been extracted to structured fields.
-
-### Combined Optimizations
-
-You can combine all optimizations for maximum storage efficiency:
-
-```bash
-python test_syslog_server.py --log-type linux --logsdb --drop-event-original --drop-message
-```
-
-### Environment Variables
-
-You can also set these options directly in your `.env` file:
-
-```
-# Enable LogsDB mode
-ES_DATA_STREAM_NAMESPACE=logsdb
-
-# Drop fields for storage optimization
-DROP_EVENT_ORIGINAL=true
-DROP_MESSAGE=true
-```
-
-### Storage Comparison
-
-Based on typical usage patterns, you can expect approximately these storage savings:
-
-| Optimization | Approximate Storage Savings |
-|--------------|----------------------------|
-| Default (no optimizations) | Baseline |
-| LogsDB mode | 20-40% savings |
-| Drop event.original | 30-50% savings |
-| Drop message | 20-40% savings |
-| All combined | 60-80% savings |
-
-Actual savings will vary based on your specific log data.
-
-### Data Stream Naming Conventions
-
-The system uses a predictable naming convention for data streams to make it easy to identify the configuration:
-
-```
-logs-syslog-{base_namespace}-{log_type}[-no-original][-no-message]
-```
-
-Where:
-- **base_namespace**: Either "default" or "logsdb" depending on whether LogsDB mode is enabled
-- **log_type**: The type of logs being processed (windows, linux, mac, ssh, apache, all)
-- **-no-original**: Appended when event.original field is dropped
-- **-no-message**: Appended when message field is dropped
-
-Examples:
-- `logs-syslog-default-linux`: Standard configuration with Linux logs
-- `logs-syslog-logsdb-windows-no-message`: LogsDB mode with Windows logs, message field dropped
-- `logs-syslog-default-all-no-original-no-message`: All log types with both fields dropped
-- `logs-syslog-logsdb-apache-no-original`: LogsDB mode with Apache logs and no event.original field
-
-## Storage Optimization Options
-
-This system offers several ways to optimize log storage in Elasticsearch:
-
-### 1. LogsDB Mode
-
-For optimized log storage in Elasticsearch, you can enable LogsDB mode:
-
-```bash
-python test_syslog_server.py --log-type linux --logsdb
-```
-
-This configures Elasticsearch indices with LogsDB-specific settings that optimize storage and query performance for logs.
-
-### 2. Field Optimization Options
-
-The system provides field-level optimizations to further reduce storage requirements:
-
-#### Option A: Drop event.original field
-
-To reduce storage requirements, you can configure Logstash to drop the `event.original` field:
-
-```bash
-python test_syslog_server.py --drop-event-original
-```
-
-The `event.original` field typically contains a copy of the original raw message, which can significantly increase storage requirements.
-
-#### Option B: Drop message field
-
-For maximum storage savings, you can also configure Logstash to drop the `message` field entirely:
-
-```bash
-python test_syslog_server.py --drop-message
-```
-
-This option will save considerable space but means you won't have access to the message content. This is only recommended when the important data has already been extracted to structured fields.
-
-### Combined Optimizations
-
-You can combine all optimizations for maximum storage efficiency:
-
-```bash
-python test_syslog_server.py --log-type linux --logsdb --drop-event-original --drop-message
-```
-
-### Environment Variables
-
-You can also set these options directly in your `.env` file:
-
-```
-# Enable LogsDB mode
-ES_DATA_STREAM_NAMESPACE=logsdb
-
-# Drop fields for storage optimization
-DROP_EVENT_ORIGINAL=true
-DROP_MESSAGE=true
-```
-
-### Storage Comparison
-
-Based on typical usage patterns, you can expect approximately these storage savings:
-
-| Optimization | Approximate Storage Savings |
-|--------------|----------------------------|
-| Default (no optimizations) | Baseline |
-| LogsDB mode | 20-40% savings |
-| Drop event.original | 30-50% savings |
-| Drop message | 20-40% savings |
-| All combined | 60-80% savings |
-
-Actual savings will vary based on your specific log data.
-
-### Data Stream Naming Conventions
-
-The system uses a predictable naming convention for data streams to make it easy to identify the configuration:
-
-```
-logs-syslog-{base_namespace}-{log_type}[-no-original][-no-msg]
-```
-
-Where:
-- **base_namespace**: Either "default" or "logsdb" depending on whether LogsDB mode is enabled
-- **log_type**: The type of logs being processed (windows, linux, mac, ssh, apache, all)
-- **-no-original**: Appended when event.original field is dropped
-- **-no-message**: Appended when message field is dropped
-
-Examples:
-- `logs-syslog-default-linux`: Standard configuration with Linux logs
-- `logs-syslog-logsdb-windows-no-message`: LogsDB mode with Windows logs, message field dropped
-- `logs-syslog-default-all-no-original-no-message`: All log types with both fields dropped
-- `logs-syslog-logsdb-apache-no-original`: LogsDB mode with Apache logs and no event.original field
